@@ -24,24 +24,23 @@
  * one editor on a page, so each `createProofEditor()` call registers itself
  * here; the popover only ever passes a `markId`, so the dispatcher resolves
  * the owning instance by scanning registered instances for one whose current
- * marks contain that id.
- *
- * `markUnresolve` / `markDeleteThread` are intentionally left unset: the
- * MarkAction contract has no "unresolve" or "delete" kind, so those two
- * popover actions keep mutating locally exactly as they do with no hook
- * installed at all.
+ * marks contain that id. Every popover mutation reports through `onMarkAction`
+ * when it is provided; otherwise its established local mutation remains the
+ * fallback for standalone hosts.
  */
 
 import type { EditorView } from '@milkdown/kit/prose/view';
 
 import {
+  accept as acceptMutation,
+  deleteMark,
   getMarks,
+  reject as rejectMutation,
   reply as replyMutation,
   resolve as resolveMutation,
-  accept as acceptMutation,
-  reject as rejectMutation,
+  unresolve as unresolveMutation,
 } from './editor/plugins/marks';
-import type { MarkAction } from './dispatch-marks';
+import type { MarkAction, PopoverActionKind } from './dispatch-marks';
 
 interface RegisteredInstance {
   view: EditorView;
@@ -50,19 +49,19 @@ interface RegisteredInstance {
 
 const instances = new Set<RegisteredInstance>();
 const HOOK_MARKER = '__isSjawharProofEditorHook';
-
 function findInstanceForMark(markId: string): RegisteredInstance | undefined {
+  let match: RegisteredInstance | undefined;
   for (const instance of instances) {
-    if (getMarks(instance.view.state).some((mark) => mark.id === markId)) return instance;
+    if (getMarks(instance.view.state).some((mark) => mark.id === markId)) match = instance;
   }
-  return undefined;
+  return match;
 }
 
 function reportRejection(kind: PopoverHookKind, error: unknown): void {
   console.warn(`[@sjawhar/proof-editor] onMarkAction(${kind}) rejected`, error);
 }
 
-type PopoverHookKind = 'reply' | 'resolve' | 'accept' | 'reject';
+type PopoverHookKind = PopoverActionKind;
 
 function fireHookOrFallBack(
   kind: Exclude<PopoverHookKind, 'reply'>,
@@ -97,7 +96,7 @@ function installWindowProofHook(): void {
       const instance = findInstanceForMark(markId);
       if (!instance) return null;
       if (instance.onMarkAction) {
-        void Promise.resolve(instance.onMarkAction({ kind: 'reply', markId })).catch((error) =>
+        void Promise.resolve(instance.onMarkAction({ kind: 'reply', markId, text })).catch((error) =>
           reportRejection('reply', error),
         );
         return true;
@@ -107,11 +106,17 @@ function installWindowProofHook(): void {
     markResolve(markId: string) {
       return fireHookOrFallBack('resolve', markId, (view, id) => resolveMutation(view, id));
     },
+    markUnresolve(markId: string) {
+      return fireHookOrFallBack('unresolve', markId, (view, id) => unresolveMutation(view, id));
+    },
     markAccept(markId: string) {
       return fireHookOrFallBack('accept', markId, (view, id) => acceptMutation(view, id));
     },
     markReject(markId: string) {
       return fireHookOrFallBack('reject', markId, (view, id) => rejectMutation(view, id));
+    },
+    markDeleteThread(markId: string) {
+      return fireHookOrFallBack('delete', markId, (view, id) => deleteMark(view, id));
     },
   };
 }

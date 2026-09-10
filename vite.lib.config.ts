@@ -1,5 +1,6 @@
-import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { defineConfig } from 'vite';
+import dts from 'vite-plugin-dts';
 
 // @sjawhar/proof-editor library build: bundles src/lib.ts (browser) and
 // src/lib-headless.ts (Node/Bun) as ES modules a host (e.g. Dispatch) can
@@ -8,6 +9,14 @@ import { resolve } from 'path';
 // external so a host dedupes against its own copies instead of bundling a
 // second one.
 export default defineConfig({
+  plugins: [
+    dts({
+      tsconfigPath: 'tsconfig.lib.json',
+      entryRoot: 'src',
+      include: ['src/**/*.ts'],
+      exclude: ['src/tests/**', 'src/editor/schema/remark-frontmatter-plugin.ts'],
+    }),
+  ],
   publicDir: false,
   build: {
     outDir: 'dist',

@@ -1,0 +1,35 @@
+// Builds the smoke harness, serves it, drives it with Playwright, exits 1 on any FAIL.
+import { chromium } from '@playwright/test';
+import { build, preview } from 'vite';
+
+await build({ configFile: 'vite.smoke.config.ts' });
+const server = await preview({ configFile: 'vite.smoke.config.ts', preview: { port: 4173, strictPort: true } });
+const browser = await chromium.launch();
+const page = await browser.newPage();
+page.on('console', (message) => console.log(message.text()));
+await page.goto('http://127.0.0.1:4173/');
+await page.waitForFunction(() => window.__smokeAction === 'type', null, { timeout: 90_000 });
+const editorA = page.locator('#editor-a .ProseMirror');
+await editorA.click();
+await page.keyboard.insertText('Hello world, this is bold text about the plan.');
+await page.evaluate(() => window.__smokeContinueAction());
+await page.waitForFunction(() => window.__smokeAction === 'hover' || /FATAL/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 90_000 });
+const marginMark = page.locator('#editor-c [data-id]').first();
+await marginMark.hover();
+await page.locator('#status').hover();
+await page.evaluate(() => window.__smokeContinueAction());
+await page.waitForFunction(() => window.__smokeAction === 'click', null, { timeout: 90_000 });
+await marginMark.click();
+await page.evaluate(() => window.__smokeContinueAction());
+await page.waitForFunction(() => window.__smokeAction === 'click', null, { timeout: 90_000 });
+await page.locator('#editor-b2 [data-mark-id]').click();
+await page.evaluate(() => window.__smokeContinueAction());
+await page.waitForFunction(() => /DONE|FATAL/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 90_000 });
+const results = await page.evaluate(() => window.__smokeResults ?? {});
+const fatal = await page.evaluate(() => window.__smokeFatal);
+await browser.close();
+await server.close();
+const failed = Object.entries(results).filter(([, pass]) => !pass).map(([name]) => name);
+if (fatal) console.error(`FATAL: ${fatal}`);
+console.log(`${Object.keys(results).length - failed.length}/${Object.keys(results).length} smoke checks passed`);
+process.exit(fatal || failed.length > 0 ? 1 : 0);

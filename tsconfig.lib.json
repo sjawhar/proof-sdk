@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noCheck": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist"
+  },
+  "include": ["src/lib.ts", "src/lib-headless.ts"],
+  "exclude": ["src/tests/**", "src/editor/schema/remark-frontmatter-plugin.ts"]
+}

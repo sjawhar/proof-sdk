@@ -48,13 +48,14 @@ import type { Ctx } from '@milkdown/ctx';
 import { proofMarkPlugins } from './editor/schema/proof-marks';
 import { codeBlockExtPlugins } from './editor/schema/code-block-ext';
 import { frontmatterSchema } from './editor/schema/frontmatter';
-import { remarkFrontmatterPlugin } from './editor/schema/remark-frontmatter-plugin';
+import { libraryRemarkFrontmatterPlugin } from './lib-remark-frontmatter-plugin';
 import { remarkProofMarksPlugin } from './editor/schema/remark-proof-marks-plugin';
 import { proofMarkHandler } from './formats/remark-proof-marks';
 
 import { authoredTrackerPlugin } from './editor/plugins/authored-tracker';
 import { heatmapPlugin, heatmapCtx, type HeatMapMode } from './editor/plugins/heatmap-decorations';
 import { agentCursorPlugin, agentCursorCtx } from './editor/plugins/agent-cursor';
+import { setCurrentActor } from './editor/actor';
 import { suggestionsPlugins } from './editor/plugins/suggestions';
 import { markPopoverPlugin } from './editor/plugins/mark-popover';
 import { arrowCommentPlugin } from './editor/plugins/arrow-comment';
@@ -63,7 +64,6 @@ import { markdownLinkClickPlugin } from './editor/plugins/markdown-link-click';
 import { mermaidDiagramsPlugin } from './editor/plugins/mermaid-diagrams';
 import { taskCheckboxesPlugin } from './editor/plugins/task-checkboxes';
 import { tableKeyboardPlugin } from './editor/plugins/table-keyboard';
-import { keybindingsPlugin } from './editor/plugins/keybindings';
 import { placeholderPlugin } from './editor/plugins/placeholder';
 import { collabCursorBuilder, collabSelectionBuilder } from './editor/plugins/collab-cursors';
 import {
@@ -78,6 +78,7 @@ import { dispatchMarkPlugins, remarkDispatchMarksPlugin, dispatchMarkHandler, re
 import type { MarkAction } from './dispatch-marks';
 import { dispatchActionBarPlugin } from './dispatch-action-bar';
 import { registerPopoverHookInstance } from './dispatch-popover-hook';
+import { dispatchMarkEventsPlugin } from './dispatch-mark-events';
 
 export type { MarkAction, SelectionBarActionKind, PopoverActionKind } from './dispatch-marks';
 export type { StoredMark } from './editor/plugins/marks';
@@ -102,10 +103,15 @@ export interface CreateProofEditorOptions {
   /** Fired for every mark-affecting user action: Comment/Suggest/Ask on the
    *  selection bar (the editor has already applied the mark locally with a
    *  fresh markId over [from,to]; a rejected promise removes it), and
-   *  Reply/Resolve/Accept/Reject on the mark popover (no local mutation is
-   *  applied for these — the host's server is expected to mutate and the
-   *  change arrives back through the shared Y.Doc). */
+   *  Reply/Resolve/Unresolve/Accept/Reject/Delete on the mark popover (no
+   *  local mutation is applied for these — the host's server is expected to
+   *  mutate and the change arrives back through the shared Y.Doc). */
   onMarkAction?: (action: MarkAction) => void | Promise<void>;
+  /** Margin mode: report clicks and hover on mark spans and register neither
+   *  the mark popover nor the arrow-comment plugin; the host renders threads
+   *  itself. */
+  onMarkClick?: (markId: string) => void;
+  onMarkHover?: (markId: string | null) => void;
   /** Heatmap rendering mode. Defaults to 'background'. */
   heatMapMode?: HeatMapMode;
 }
@@ -114,6 +120,10 @@ export interface ProofEditorHandle {
   view: EditorView;
   /** Serialize the current document to markdown via the configured serializer. */
   getMarkdown(): string;
+  /** Replace the current document with parsed markdown. */
+  setMarkdown(markdown: string): void;
+  /** Top offset of each mark's first span relative to the library root. */
+  markOffsets(): Map<string, number>;
   /** Toggle editability (e.g. for a readOnly flag change post-construction). */
   setReadOnly(readOnly: boolean): void;
   /** Apply mark metadata received from a peer, re-anchoring by quote. Unified
@@ -195,10 +205,12 @@ export async function createProofEditor(
   root: HTMLElement,
   opts: CreateProofEditorOptions,
 ): Promise<ProofEditorHandle> {
+  root.classList.add('proof-editor');
+  setCurrentActor(`human:${opts.user.name}`);
   let alive = true;
   const heatMapMode: HeatMapMode = opts.heatMapMode ?? 'background';
 
-  const editor = await Editor.make()
+  const builder = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, root);
       ctx.set(defaultValueCtx, '');
@@ -208,7 +220,7 @@ export async function createProofEditor(
     .use(gfm)
     // Frontmatter must be registered after commonmark so remark-frontmatter
     // claims `---` before commonmark parses it as a thematic break.
-    .use(remarkFrontmatterPlugin)
+    .use(libraryRemarkFrontmatterPlugin)
     .use(frontmatterSchema)
     .use(codeBlockExtPlugins)
     .use(history)
@@ -229,22 +241,26 @@ export async function createProofEditor(
     .use(authoredTrackerPlugin)
     .use(heatmapPlugin)
     .use(agentCursorPlugin)
-    .use(suggestionsPlugins)
-    // Inline mark UI: popover (Reply/Resolve/Accept/Reject — see
-    // dispatch-popover-hook.ts) + this library's own Comment/Suggest/Ask bar
-    // (see dispatch-action-bar.ts; replaces upstream's markSelectionBarPlugin,
-    // which has no extension point for Ask and no hook for Comment/Suggest)
-    .use(markPopoverPlugin)
+    .use(suggestionsPlugins);
+
+  const marginMode = Boolean(opts.onMarkClick || opts.onMarkHover);
+  if (marginMode) {
+    builder.use(dispatchMarkEventsPlugin({ onMarkClick: opts.onMarkClick, onMarkHover: opts.onMarkHover }));
+  } else {
+    builder.use(markPopoverPlugin).use(arrowCommentPlugin);
+  }
+
+  const editor = await builder
+    // This library's own Comment/Suggest/Ask bar replaces upstream's
+    // markSelectionBarPlugin, which has no extension point for Ask or a hook
+    // for Comment/Suggest.
     .use(dispatchActionBarPlugin({ by: opts.user.name, onMarkAction: opts.onMarkAction }))
-    .use(arrowCommentPlugin)
     .use(findHighlightsPlugin)
     .use(taskCheckboxesPlugin)
     .use(mermaidDiagramsPlugin)
     .use(markdownLinkClickPlugin)
     // Register unified marks plugin
     .use(marksPlugins)
-    // Register keybindings plugin for agent shortcuts
-    .use(keybindingsPlugin)
     // Allow Backspace to delete empty table rows
     .use(tableKeyboardPlugin)
     .use(placeholderPlugin)
@@ -296,13 +312,29 @@ export async function createProofEditor(
     }
   });
 
-  const unregisterPopoverHook = registerPopoverHookInstance(view, opts.onMarkAction);
+  const unregisterPopoverHook = marginMode
+    ? () => {}
+    : registerPopoverHookInstance(view, opts.onMarkAction);
 
   return {
     view,
     getMarkdown(): string {
       const serializer = editor.ctx.get(serializerCtx);
       return serializer(view.state.doc);
+    },
+    setMarkdown(markdown: string): void {
+      const parsed = editor.ctx.get(parserCtx)(markdown);
+      const { state } = view;
+      view.dispatch(state.tr.replaceWith(0, state.doc.content.size, parsed.content));
+    },
+    markOffsets(): Map<string, number> {
+      const offsets = new Map<string, number>();
+      const rootTop = root.getBoundingClientRect().top;
+      for (const span of view.dom.querySelectorAll<HTMLElement>('[data-id]')) {
+        const id = span.dataset.id;
+        if (id && !offsets.has(id)) offsets.set(id, span.getBoundingClientRect().top - rootTop);
+      }
+      return offsets;
     },
     setReadOnly,
     applyRemoteMarks(metadata: Record<string, StoredMark>, options?: { hydrateAnchors?: boolean }): void {

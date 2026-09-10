@@ -1,19 +1,12 @@
 /*
- * Proof editor library styles.
- * Extracted verbatim from src/index.html's inline <style> block (lines 12-1026)
- * for the standalone-library feasibility spike. Host apps import this file
- * alongside src/lib.ts.
+ * Standalone Proof editor library styles.
+ * Host applications import this file alongside the browser entry point.
  */
 
-    :root { --sab: env(safe-area-inset-bottom, 0px); }
+    .proof-editor { --sab: env(safe-area-inset-bottom, 0px); }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
 
-    :root {
+    .proof-editor {
       --a0-color: rgba(255, 100, 100, 0.25);
       --a1-color: rgba(255, 200, 100, 0.25);
       --a2-color: rgba(255, 255, 100, 0.25);
@@ -42,77 +35,12 @@
       --text-align: left;
     }
 
-    /* Whitey Theme - Based on Typora Whitey Theme */
-    :root[data-theme="whitey"] {
-      --bg-color: #fefefe;
-      --text-color: #333;
-      --code-bg: white;
-      --pre-bg: white;
-      --pre-color: #333;
-      --blockquote-border: #ddd;
-      --blockquote-color: #333;
-      --font-family: "Vollkorn", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, Times, "Times New Roman", serif;
-      --font-size: 19px;
-      --line-height: 1.53;
-      --content-max-width: 960px;
-      --heading-weight: normal;
-      --heading-align: center;
-      --text-align: justify;
-    }
 
-    body {
+    .proof-editor {
       font-family: var(--font-family);
       font-size: var(--font-size);
       background: var(--bg-color);
       color: var(--text-color);
-      min-height: 100vh;
-      margin: 0;
-      padding: 0;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    #app {
-      padding: 0;
-    }
-
-    /* Editor container - holds gutter and editor side by side */
-    #editor-container {
-      position: relative;
-      max-width: var(--content-max-width);
-      margin: 0 auto;
-    }
-
-    /* Provenance gutter - fixed position flush with left edge */
-    #provenance-gutter {
-      position: fixed;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: var(--provenance-bar-width);
-      z-index: 50;
-      pointer-events: none;
-      overflow: hidden;
-    }
-
-    /* Individual gutter segments */
-    .gutter-segment {
-      position: absolute;
-      left: 0;
-      width: 100%;
-    }
-
-    #editor {
-      background: var(--bg-color);
-      padding: 60px 40px 40px;
-      padding-left: calc(var(--provenance-bar-width) + 20px);
-      min-height: 100vh;
-      outline: none;
-    }
-
-    /* Share mode: comfortable reading/writing width */
-    body[data-share-mode="true"] #editor {
-      padding: 80px 80px 40px;
-      padding-left: calc(var(--provenance-bar-width) + 80px);
     }
 
     /* Milkdown editor styles */
@@ -155,12 +83,6 @@
       font-style: italic;
     }
 
-    body[data-share-mode="true"] .milkdown .editor.ProseMirror > p.is-editor-empty:first-child::before {
-      content: 'Start writing...';
-      color: #bbb;
-      font-style: normal;
-      font-weight: 300;
-    }
 
     .proof-task-checkbox {
       margin-right: 0.5em;
@@ -863,51 +785,7 @@
       margin: 2em 0;
     }
 
-    /* Whitey Theme specific typography overrides */
-    :root[data-theme="whitey"] .milkdown h1 {
-      font-size: 3em;
-      margin-top: 1.6em;
-    }
-    :root[data-theme="whitey"] .milkdown h2 {
-      font-size: 1.5em;
-      margin-top: 2em;
-      position: relative;
-      padding-bottom: 0.5em;
-    }
-    :root[data-theme="whitey"] .milkdown h2::after {
-      content: '';
-      display: block;
-      width: 100px;
-      height: 1px;
-      background: #2f2f2f;
-      margin: 0.5em auto 0;
-    }
-    :root[data-theme="whitey"] .milkdown h3 {
-      font-size: 1.25em;
-      margin-top: 3em;
-      font-style: italic;
-    }
-    :root[data-theme="whitey"] .milkdown ul {
-      list-style: square;
-      padding-left: 1.2em;
-    }
-    :root[data-theme="whitey"] .milkdown pre {
-      margin-left: 1em;
-      padding-left: 1em;
-      border: 1px solid #ddd;
-      border-radius: 0;
-      background: white;
-      color: #333;
-    }
 
-    /* Loading state */
-    .loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 400px;
-      color: #999;
-    }
 
     /* Prism.js Syntax Highlighting */
     .milkdown pre code .token.comment,
@@ -971,54 +849,6 @@
       cursor: help;
     }
 
-    /* Whitey theme syntax highlighting - light colors */
-    :root[data-theme="whitey"] .milkdown pre code .token.comment,
-    :root[data-theme="whitey"] .milkdown pre code .token.prolog,
-    :root[data-theme="whitey"] .milkdown pre code .token.doctype,
-    :root[data-theme="whitey"] .milkdown pre code .token.cdata {
-      color: #708090;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.punctuation {
-      color: #333;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.property,
-    :root[data-theme="whitey"] .milkdown pre code .token.tag,
-    :root[data-theme="whitey"] .milkdown pre code .token.constant,
-    :root[data-theme="whitey"] .milkdown pre code .token.symbol,
-    :root[data-theme="whitey"] .milkdown pre code .token.deleted {
-      color: #c92c2c;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.boolean,
-    :root[data-theme="whitey"] .milkdown pre code .token.number {
-      color: #905;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.selector,
-    :root[data-theme="whitey"] .milkdown pre code .token.attr-name,
-    :root[data-theme="whitey"] .milkdown pre code .token.string,
-    :root[data-theme="whitey"] .milkdown pre code .token.char,
-    :root[data-theme="whitey"] .milkdown pre code .token.builtin,
-    :root[data-theme="whitey"] .milkdown pre code .token.inserted {
-      color: #228b22;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.operator,
-    :root[data-theme="whitey"] .milkdown pre code .token.entity,
-    :root[data-theme="whitey"] .milkdown pre code .token.url,
-    :root[data-theme="whitey"] .milkdown pre code .token.variable {
-      color: #333;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.atrule,
-    :root[data-theme="whitey"] .milkdown pre code .token.attr-value,
-    :root[data-theme="whitey"] .milkdown pre code .token.function,
-    :root[data-theme="whitey"] .milkdown pre code .token.class-name {
-      color: #dd4a68;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.keyword {
-      color: #07a;
-    }
-    :root[data-theme="whitey"] .milkdown pre code .token.regex,
-    :root[data-theme="whitey"] .milkdown pre code .token.important {
-      color: #e90;
-    }
 
 
 /*

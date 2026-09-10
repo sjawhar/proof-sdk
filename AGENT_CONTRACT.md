@@ -145,6 +145,24 @@ Send `Idempotency-Key` on mutation requests so retries stay safe.
 3. Refresh with `POST /api/documents/:slug/collab-refresh` before token expiry
 4. Reconnect using the refreshed token
 
+## Embedded Editor Contract
+
+For browser integrations, install `@sjawhar/proof-editor` and construct the editor with a
+host-owned `Y.Doc`, optional `Awareness`, and `{ name, color }` user identity. The browser factory
+returns a `ProofEditorHandle`; the host owns transport, document persistence, and any external
+record store.
+
+`onMarkAction` reports selection-bar actions and default-popover thread actions. Reply reports
+its text; the other thread actions are `resolve`, `unresolve`, `accept`, `reject`, and `delete`.
+When the host supplies `onMarkClick` or `onMarkHover`, the editor enters margin mode: it reports
+mark interactions but registers neither the popover nor the arrow-comment composer. The host can
+align its thread UI with highlights through `handle.markOffsets()`, whose map values are each
+mark's first-span top offset relative to the editor root.
+
+`handle.setMarkdown(markdown)` parses with the browser editor schema and replaces the document.
+`handle.setReadOnly(boolean)` controls editability, and `handle.applyRemoteMarks(...)` projects
+host metadata into Proof's mark layer without granting the library ownership of that metadata.
+
 ## CLI Example
 
 ```bash

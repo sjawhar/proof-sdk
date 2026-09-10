@@ -5,7 +5,7 @@
   <title>@sjawhar/proof-editor browser smoke test</title>
   <link rel="stylesheet" href="../src/lib.css">
   <style>
-    body { display: flex; gap: 16px; font-family: sans-serif; margin: 0; padding: 16px; }
+    #smoke-layout { display: flex; gap: 16px; font-family: sans-serif; }
     .pane { flex: 1; border: 1px solid #ccc; }
     .pane h2 { font-size: 13px; padding: 6px 10px; margin: 0; background: #eee; }
     #editor-a, #editor-b { min-height: 400px; }
@@ -13,13 +13,16 @@
   </style>
 </head>
 <body>
-  <div class="pane">
-    <h2>Editor A (docA)</h2>
-    <div id="editor-a"></div>
-  </div>
-  <div class="pane">
-    <h2>Editor B (docB)</h2>
-    <div id="editor-b"></div>
+  <div id="smoke-layout">
+    <div class="pane">
+      <h2>Editor A (docA)</h2>
+      <div id="editor-a"></div>
+    </div>
+    <div class="pane">
+      <h2>Editor B (docB)</h2>
+      <div id="editor-b"></div>
+      <div id="editor-c"></div>
+    </div>
   </div>
   <div id="status">booting…</div>
   <script type="module" src="./main.ts"></script>

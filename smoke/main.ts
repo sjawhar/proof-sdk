@@ -28,8 +28,21 @@ function record(name: string, pass: boolean, detail?: string): void {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  const { promise, resolve } = Promise.withResolvers<void>();
+  window.setTimeout(resolve, ms);
+  return promise;
 }
+
+function waitForPlaywrightAction(action: 'click' | 'hover' | 'type'): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const continueAction = () => {
+    Object.assign(window, { __smokeAction: null });
+    resolve();
+  };
+  Object.assign(window, { __smokeAction: action, __smokeContinueAction: continueAction });
+  return promise;
+}
+
 
 window.addEventListener('error', (event) => log(`WINDOW ERROR: ${event.message}`));
 window.addEventListener('unhandledrejection', (event) => {
@@ -129,6 +142,7 @@ async function main(): Promise<void> {
       }
     },
   });
+  await waitForPlaywrightAction('type');
   const handleB: ProofEditorHandle = await createProofEditor(rootB, {
     ydoc: docB,
     awareness: awarenessB,
@@ -136,8 +150,7 @@ async function main(): Promise<void> {
   });
   record('both editors created', true);
 
-  // --- 1. seed content in A by typing (dispatching a real ProseMirror transaction) ---
-  handleA.view.dispatch(handleA.view.state.tr.insertText('Hello world, this is bold text about the plan.'));
+  // --- 1. content is typed into A by Playwright ---
   await sleep(400);
   record('type in A appears in B', handleB.view.state.doc.textContent.includes('Hello world'));
 
@@ -169,7 +182,7 @@ async function main(): Promise<void> {
   record('editor A DOM has the dispatchAsk span', !!firstAskMarkId && !!rootA.querySelector(`[data-id="${firstAskMarkId}"]`));
 
   log('CHECKPOINT: first ask mark visible in both panes; pausing for screenshot');
-  await sleep(12000);
+  await sleep(300);
   log('CHECKPOINT: resuming');
 
   // --- 3. select a different span, reject the hook, mark should be removed ---
@@ -213,13 +226,159 @@ async function main(): Promise<void> {
   handleA.setReadOnly(false);
   record('setReadOnly(false) restores editability', handleA.view.editable === true);
 
-  (window as unknown as Record<string, unknown>).__smokeResults = results;
-  (window as unknown as Record<string, unknown>).__smokeHandles = { handleA, handleB, docA, docB, Y };
+  // --- 7. margin mode: onMarkClick / onMarkHover / markOffsets, no popover chrome ---
+  const popoverChromeCount = document.querySelectorAll('.mark-popover, .mark-popover-backdrop, .mark-mobile-strip').length;
+  const clicks: string[] = [];
+  const hovers: Array<string | null> = [];
+  const handleC = await createProofEditor(document.getElementById('editor-c')!, {
+    ydoc: docB,
+    awareness: null,
+    user: { name: 'Cleo', color: '#10b981' },
+    onMarkAction: async (action) => {
+      markActionsA.push(action);
+    },
+    onMarkClick: (markId) => clicks.push(markId),
+    onMarkHover: (markId) => hovers.push(markId),
+  });
+  const cRange = findTextRange(handleC.view, 'Hello world');
+  if (!cRange) throw new Error('editor C has no text');
+  handleC.view.dispatch(handleC.view.state.tr.setSelection(TextSelection.create(handleC.view.state.doc, cRange.from, cRange.to)));
+  handleC.view.focus();
+  await sleep(100);
+  const cCommentButton = Array.from(document.querySelectorAll<HTMLButtonElement>('#editor-c .dispatch-action-bar button'))
+    .find((button) => button.textContent === 'Comment');
+  cCommentButton?.click();
+  await sleep(300);
+  const cAction = markActionsA[markActionsA.length - 1];
+  const cMarkId = cAction && 'markId' in cAction ? cAction.markId : null;
+  const cSpan = cMarkId ? document.querySelector<HTMLElement>(`#editor-c [data-id="${cMarkId}"]`) : null;
+  const cSecondRange = findTextRange(handleC.view, 'the plan');
+  if (!cSecondRange) throw new Error('editor C has no second text range');
+  handleC.view.dispatch(handleC.view.state.tr.setSelection(TextSelection.create(handleC.view.state.doc, cSecondRange.from, cSecondRange.to)));
+  handleC.view.focus();
+  await sleep(100);
+  cCommentButton?.click();
+  await sleep(300);
+  const cSecondAction = markActionsA[markActionsA.length - 1];
+  const cSecondMarkId = cSecondAction && 'markId' in cSecondAction ? cSecondAction.markId : null;
+  await waitForPlaywrightAction('hover');
+  await sleep(100);
+  const hoverReportsEnterAndLeave = !!cMarkId && hovers[0] === cMarkId && hovers[hovers.length - 1] === null;
+  await waitForPlaywrightAction('click');
+  await sleep(100);
+  record(
+    'onMarkClick reports the clicked mark id',
+    !!cMarkId && clicks.includes(cMarkId),
+    JSON.stringify({ button: !!cCommentButton, action: cAction, span: !!cSpan, clicks }),
+  );
+  record('onMarkHover reports enter and leave', hoverReportsEnterAndLeave, JSON.stringify(hovers));
+  const markOffsetsCandidate: unknown = handleC;
+  let offsetOrderMatchesDocument = false;
+  if (
+    typeof markOffsetsCandidate === 'object'
+    && markOffsetsCandidate !== null
+    && 'markOffsets' in markOffsetsCandidate
+    && typeof markOffsetsCandidate.markOffsets === 'function'
+  ) {
+    const offsets = markOffsetsCandidate.markOffsets();
+    if (offsets instanceof Map && cMarkId && cSecondMarkId && cSpan) {
+      const expectedOffset = cSpan.getBoundingClientRect().top - document.getElementById('editor-c')!.getBoundingClientRect().top;
+      const firstOffset = offsets.get(cMarkId);
+      const secondOffset = offsets.get(cSecondMarkId);
+      offsetOrderMatchesDocument = typeof firstOffset === 'number'
+        && typeof secondOffset === 'number'
+        && Math.abs(firstOffset - expectedOffset) < 1
+        && firstOffset <= secondOffset
+        && [...offsets.keys()].indexOf(cMarkId) < [...offsets.keys()].indexOf(cSecondMarkId);
+    }
+  }
+  record('markOffsets reports highlights in document order', offsetOrderMatchesDocument);
+  record(
+    'margin mode renders no popover chrome',
+    document.querySelectorAll('.mark-popover, .mark-popover-backdrop, .mark-mobile-strip').length === popoverChromeCount,
+  );
+  record('root carries the proof-editor scope class', document.getElementById('editor-c')!.classList.contains('proof-editor'));
+
+  // --- 8. popover mode (a second editor on docB): Reply text reaches onMarkAction ---
+  const replies: MarkAction[] = [];
+  const rootB2 = document.getElementById('editor-b')!.appendChild(document.createElement('div'));
+  rootB2.id = 'editor-b2';
+  const handleB2 = await createProofEditor(rootB2, {
+    ydoc: docB,
+    awareness: null,
+    user: { name: 'Bob', color: '#3b82f6' },
+    onMarkAction: async (action) => {
+      replies.push(action);
+    },
+  });
+  if (cMarkId) {
+    // Thread metadata normally arrives through the host's marks projection; feed it the way a host would.
+    handleB2.applyRemoteMarks({
+      [cMarkId]: {
+        kind: 'comment',
+        by: 'human:Cleo',
+        createdAt: new Date().toISOString(),
+        quote: 'Hello world',
+        range: cRange,
+        text: 'Initial comment',
+        thread: cMarkId,
+        resolved: false,
+        replies: [],
+      },
+    }, { hydrateAnchors: false });
+  }
+  await sleep(100);
+  const bSpan = cMarkId ? handleB2.view.dom.querySelector<HTMLElement>(`[data-mark-id="${cMarkId}"]`) : null;
+  if (!bSpan) throw new Error('popover editor has no comment span');
+  await waitForPlaywrightAction('click');
+  await sleep(200);
+  const replyBox = document.querySelector<HTMLTextAreaElement>('.mark-popover textarea');
+  if (replyBox) {
+    replyBox.value = 'reply text';
+    replyBox.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const replyButton = Array.from(document.querySelectorAll<HTMLButtonElement>('.mark-popover button'))
+    .find((button) => button.textContent === 'Reply');
+  replyButton?.click();
+  await sleep(200);
+  record(
+    'popover Reply carries its text through onMarkAction',
+    replies.some((action) => action.kind === 'reply' && 'text' in action && action.text === 'reply text'),
+    JSON.stringify({ replyBox: !!replyBox, replyButton: !!replyButton, disabled: replyButton?.disabled, replies }),
+  );
+  handleB2.destroy();
+  const authoredTree = JSON.stringify(docA.getXmlFragment('prosemirror').toJSON());
+
+  // --- 9. setMarkdown replaces the document ---
+  const setMarkdownCandidate: unknown = handleC;
+  if (
+    typeof setMarkdownCandidate === 'object'
+    && setMarkdownCandidate !== null
+    && 'setMarkdown' in setMarkdownCandidate
+    && typeof setMarkdownCandidate.setMarkdown === 'function'
+  ) {
+    setMarkdownCandidate.setMarkdown('# Title\n\nBody paragraph.');
+    await sleep(100);
+    record('setMarkdown renders parsed markdown', !!handleC.view.dom.querySelector('h1') && handleC.view.dom.textContent!.includes('Body paragraph.'));
+  } else {
+    record('setMarkdown renders parsed markdown', false, 'method is absent');
+  }
+  // --- 10. scoped CSS: the page body is untouched; the actor is the user ---
+  record('lib.css leaves body alone', getComputedStyle(document.body).marginTop === '8px');
+  await sleep(200);
+  record('typing is authored by human:<user>', authoredTree.includes('human:Alice'), authoredTree);
+  handleC.destroy();
+  Object.assign(window, {
+    __smokeResults: results,
+    __smokeHandles: { handleA, handleB, docA, docB, Y },
+  });
   log('DONE');
 }
 
 main().catch((error) => {
   log(`FATAL: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-  (window as unknown as Record<string, unknown>).__smokeResults = results;
-  (window as unknown as Record<string, unknown>).__smokeFatal = error instanceof Error ? error.message : String(error);
+  Object.assign(window, {
+    __smokeResults: results,
+    __smokeFatal: error instanceof Error ? error.message : String(error),
+  });
 });

@@ -29,11 +29,12 @@ import type { MarkRange } from './editor/plugins/marks';
 // ============================================================================
 
 export type SelectionBarActionKind = 'comment' | 'ask' | 'suggest';
-export type PopoverActionKind = 'reply' | 'resolve' | 'accept' | 'reject';
+export type PopoverActionKind = 'reply' | 'resolve' | 'unresolve' | 'accept' | 'reject' | 'delete';
 
 export type MarkAction =
   | { kind: SelectionBarActionKind; markId: string; quote: string; from: number; to: number }
-  | { kind: PopoverActionKind; markId: string };
+  | { kind: 'reply'; markId: string; text: string }
+  | { kind: Exclude<PopoverActionKind, 'reply'>; markId: string };
 
 // ============================================================================
 // ProseMirror mark schema
