@@ -1,0 +1,337 @@
+/**
+ * Proof Editor — standalone library entry point.
+ *
+ * Constructs the Milkdown editor + Proof's mark/collab plugin stack WITHOUT
+ * the app shell singleton in src/editor/index.ts (ProofEditorImpl) and
+ * without any of its ../bridge, ../agent, ../analytics, ../ui imports for
+ * auth/websocket/dialogs/analytics.
+ *
+ * The host owns the Y.Doc and its transport (e.g. HocuspocusProvider); this
+ * factory only binds to what it is given via `opts.ydoc` / `opts.awareness`.
+ * Mark-affecting user actions (Comment/Suggest/Ask on the selection bar,
+ * Reply/Resolve/Accept/Reject on the mark popover) are reported through
+ * `opts.onMarkAction` instead of being applied unconditionally — see
+ * ./dispatch-action-bar.ts and ./dispatch-popover-hook.ts for the two
+ * distinct interception mechanisms this required.
+ *
+ * Construction and collab-wiring below is adapted from src/editor/index.ts's
+ * `ProofEditorImpl.init()` (plugin `.use()` chain) and `initFromShare()`'s
+ * collab activation + `installCollabCursorsWhenReady()` — copied, not
+ * imported, so this file has zero dependency on the ProofEditorImpl class or
+ * any app-shell singleton.
+ */
+
+import {
+  Editor,
+  rootCtx,
+  defaultValueCtx,
+  editorViewCtx,
+  parserCtx,
+  serializerCtx,
+  remarkStringifyOptionsCtx,
+  prosePluginsCtx,
+} from '@milkdown/core';
+import { commonmark } from '@milkdown/preset-commonmark';
+import { gfm } from '@milkdown/preset-gfm';
+import { history } from '@milkdown/plugin-history';
+import { collab, collabServiceCtx, type CollabService } from '@milkdown/plugin-collab';
+import { listener } from '@milkdown/plugin-listener';
+import { cursor } from '@milkdown/plugin-cursor';
+import { clipboard } from '@milkdown/plugin-clipboard';
+import { nord } from '@milkdown/theme-nord';
+import { yCursorPlugin, yCursorPluginKey, ySyncPluginKey } from 'y-prosemirror';
+import type { Awareness } from 'y-protocols/awareness';
+import type * as Y from 'yjs';
+import type { EditorView } from '@milkdown/kit/prose/view';
+import type { Ctx } from '@milkdown/ctx';
+
+import { proofMarkPlugins } from './editor/schema/proof-marks';
+import { codeBlockExtPlugins } from './editor/schema/code-block-ext';
+import { frontmatterSchema } from './editor/schema/frontmatter';
+import { remarkFrontmatterPlugin } from './editor/schema/remark-frontmatter-plugin';
+import { remarkProofMarksPlugin } from './editor/schema/remark-proof-marks-plugin';
+import { proofMarkHandler } from './formats/remark-proof-marks';
+
+import { authoredTrackerPlugin } from './editor/plugins/authored-tracker';
+import { heatmapPlugin, heatmapCtx, type HeatMapMode } from './editor/plugins/heatmap-decorations';
+import { agentCursorPlugin, agentCursorCtx } from './editor/plugins/agent-cursor';
+import { suggestionsPlugins } from './editor/plugins/suggestions';
+import { markPopoverPlugin } from './editor/plugins/mark-popover';
+import { arrowCommentPlugin } from './editor/plugins/arrow-comment';
+import { findHighlightsPlugin } from './editor/plugins/find-highlights';
+import { markdownLinkClickPlugin } from './editor/plugins/markdown-link-click';
+import { mermaidDiagramsPlugin } from './editor/plugins/mermaid-diagrams';
+import { taskCheckboxesPlugin } from './editor/plugins/task-checkboxes';
+import { tableKeyboardPlugin } from './editor/plugins/table-keyboard';
+import { keybindingsPlugin } from './editor/plugins/keybindings';
+import { placeholderPlugin } from './editor/plugins/placeholder';
+import { collabCursorBuilder, collabSelectionBuilder } from './editor/plugins/collab-cursors';
+import {
+  marksPlugins,
+  setDefaultMarkdownParser,
+  applyRemoteMarks as applyRemoteMarksMutation,
+  deleteMark,
+  type StoredMark,
+} from './editor/plugins/marks';
+
+import { dispatchMarkPlugins, remarkDispatchMarksPlugin, dispatchMarkHandler, removeAskMark } from './dispatch-marks';
+import type { MarkAction } from './dispatch-marks';
+import { dispatchActionBarPlugin } from './dispatch-action-bar';
+import { registerPopoverHookInstance } from './dispatch-popover-hook';
+
+export type { MarkAction, SelectionBarActionKind, PopoverActionKind } from './dispatch-marks';
+export type { StoredMark } from './editor/plugins/marks';
+
+export interface ProofEditorUser {
+  name: string;
+  color: string;
+}
+
+export interface CreateProofEditorOptions {
+  /** Host-owned Yjs document. Must contain (or will lazily grow) an XmlFragment
+   *  named 'prosemirror' — see CollabService#bindDoc, which calls
+   *  `doc.getXmlFragment('prosemirror')` for us. */
+  ydoc: Y.Doc;
+  /** Host-owned awareness instance (e.g. from HocuspocusProvider#awareness).
+   *  Pass null/undefined to run without collaborative cursors. */
+  awareness?: Awareness | null;
+  /** Local user identity for cursor labels. */
+  user: ProofEditorUser;
+  /** Render the document read-only. Defaults to false. */
+  readOnly?: boolean;
+  /** Fired for every mark-affecting user action: Comment/Suggest/Ask on the
+   *  selection bar (the editor has already applied the mark locally with a
+   *  fresh markId over [from,to]; a rejected promise removes it), and
+   *  Reply/Resolve/Accept/Reject on the mark popover (no local mutation is
+   *  applied for these — the host's server is expected to mutate and the
+   *  change arrives back through the shared Y.Doc). */
+  onMarkAction?: (action: MarkAction) => void | Promise<void>;
+  /** Heatmap rendering mode. Defaults to 'background'. */
+  heatMapMode?: HeatMapMode;
+}
+
+export interface ProofEditorHandle {
+  view: EditorView;
+  /** Serialize the current document to markdown via the configured serializer. */
+  getMarkdown(): string;
+  /** Toggle editability (e.g. for a readOnly flag change post-construction). */
+  setReadOnly(readOnly: boolean): void;
+  /** Apply mark metadata received from a peer, re-anchoring by quote. Unified
+   *  Proof marks (comment/suggestion/flagged/approved) only — see
+   *  ./dispatch-marks.ts's module doc for why dispatchAsk marks are outside
+   *  this system. */
+  applyRemoteMarks(metadata: Record<string, StoredMark>, options?: { hydrateAnchors?: boolean }): void;
+  /** Removes a mark by id, trying the unified marks system first and falling
+   *  back to a dispatchAsk mark. */
+  removeMark(markId: string): void;
+  /** Scrolls a mark's anchor into view and pulses it. Works for both the
+   *  unified marks system and dispatchAsk marks: both render `data-id`. */
+  focusMark(markId: string): void;
+  /** Tear down the editor and any collab bindings. */
+  destroy(): void;
+}
+
+function installCollabCursorsWhenReady(
+  view: EditorView,
+  ctx: Ctx,
+  collabService: CollabService,
+  awareness: Awareness,
+  isAlive: () => boolean,
+): void {
+  const hasCursorPlugin = () => view.state.plugins.some((plugin) => plugin.spec.key === yCursorPluginKey);
+
+  const maxAttempts = 120;
+  const attemptInstall = (attempt: number) => {
+    if (!isAlive() || hasCursorPlugin()) return;
+
+    let mappingReady = false;
+    try {
+      // y-prosemirror types ySyncPluginKey as PluginKey<any>; its state carries
+      // a ProsemirrorBinding whose `mapping` is a Map<Y type, PM node>.
+      const ystate = ySyncPluginKey.getState(view.state);
+      const mapping = ystate?.binding?.mapping;
+      if (mapping && typeof mapping.size === 'number' && mapping.size > 0) mappingReady = true;
+    } catch {
+      // ignore and retry
+    }
+
+    if (!mappingReady) {
+      if (attempt < maxAttempts) requestAnimationFrame(() => attemptInstall(attempt + 1));
+      return;
+    }
+
+    try {
+      collabService.setAwareness(awareness);
+    } catch {
+      // ignore; cursor plugin can still work with direct awareness reference
+    }
+
+    try {
+      const cursorPlugin = yCursorPlugin(
+        awareness,
+        { cursorBuilder: collabCursorBuilder, selectionBuilder: collabSelectionBuilder },
+        undefined,
+      );
+      const nextPlugins = view.state.plugins.concat(cursorPlugin);
+      ctx.set(prosePluginsCtx, nextPlugins);
+      view.updateState(view.state.reconfigure({ plugins: nextPlugins }));
+    } catch (error) {
+      console.warn('[@sjawhar/proof-editor] failed to install yCursor plugin', error);
+    }
+  };
+
+  attemptInstall(0);
+}
+
+const PULSE_CLASS = 'dispatch-mark-pulse';
+const PULSE_DURATION_MS = 1200;
+
+function cssEscapeAttrValue(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value);
+  return value.replace(/["\\]/g, '\\$&');
+}
+
+export async function createProofEditor(
+  root: HTMLElement,
+  opts: CreateProofEditorOptions,
+): Promise<ProofEditorHandle> {
+  let alive = true;
+  const heatMapMode: HeatMapMode = opts.heatMapMode ?? 'background';
+
+  const editor = await Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, root);
+      ctx.set(defaultValueCtx, '');
+    })
+    .config(nord)
+    .use(commonmark)
+    .use(gfm)
+    // Frontmatter must be registered after commonmark so remark-frontmatter
+    // claims `---` before commonmark parses it as a thematic break.
+    .use(remarkFrontmatterPlugin)
+    .use(frontmatterSchema)
+    .use(codeBlockExtPlugins)
+    .use(history)
+    .use(listener)
+    .use(collab)
+    .use(cursor)
+    .use(clipboard)
+    // Register proof mark schemas, plus this library's own dispatchAsk mark
+    .use(proofMarkPlugins)
+    .use(dispatchMarkPlugins)
+    // Register remark plugins for proof marks and dispatchAsk parsing
+    .use(remarkProofMarksPlugin)
+    .use(remarkDispatchMarksPlugin)
+    // Register contexts
+    .use(heatmapCtx)
+    .use(agentCursorCtx)
+    // Register plugins
+    .use(authoredTrackerPlugin)
+    .use(heatmapPlugin)
+    .use(agentCursorPlugin)
+    .use(suggestionsPlugins)
+    // Inline mark UI: popover (Reply/Resolve/Accept/Reject — see
+    // dispatch-popover-hook.ts) + this library's own Comment/Suggest/Ask bar
+    // (see dispatch-action-bar.ts; replaces upstream's markSelectionBarPlugin,
+    // which has no extension point for Ask and no hook for Comment/Suggest)
+    .use(markPopoverPlugin)
+    .use(dispatchActionBarPlugin({ by: opts.user.name, onMarkAction: opts.onMarkAction }))
+    .use(arrowCommentPlugin)
+    .use(findHighlightsPlugin)
+    .use(taskCheckboxesPlugin)
+    .use(mermaidDiagramsPlugin)
+    .use(markdownLinkClickPlugin)
+    // Register unified marks plugin
+    .use(marksPlugins)
+    // Register keybindings plugin for agent shortcuts
+    .use(keybindingsPlugin)
+    // Allow Backspace to delete empty table rows
+    .use(tableKeyboardPlugin)
+    .use(placeholderPlugin)
+    .config((ctx) => {
+      ctx.update(remarkStringifyOptionsCtx, (prev) => ({
+        ...prev,
+        handlers: {
+          ...(prev.handlers ?? {}),
+          proofMark: proofMarkHandler,
+          dispatchMark: dispatchMarkHandler,
+        },
+      }));
+      ctx.set(heatmapCtx.key, { mode: heatMapMode });
+    })
+    .create();
+
+  editor.action((ctx) => {
+    setDefaultMarkdownParser(ctx.get(parserCtx));
+  });
+
+  const view = editor.ctx.get(editorViewCtx);
+
+  let currentReadOnly = Boolean(opts.readOnly);
+  view.setProps({ editable: () => !currentReadOnly });
+  const setReadOnly = (readOnly: boolean) => {
+    currentReadOnly = readOnly;
+    view.setProps({ editable: () => !currentReadOnly });
+  };
+
+  // --- Collab binding -------------------------------------------------
+  // Adapted from ProofEditorImpl's initFromShare() collab-activation block.
+  // The awareness/yCursor plugin is intentionally installed *after* first
+  // connecting without it: y-prosemirror's cursor plugin can throw (nodeSize
+  // on undefined) if it evaluates awareness state before the ySync plugin's
+  // mapping is populated.
+  editor.action((ctx) => {
+    const collabService = ctx.get(collabServiceCtx);
+    collabService.bindDoc(opts.ydoc);
+    collabService.mergeOptions({
+      yCursorOpts: { cursorBuilder: collabCursorBuilder, selectionBuilder: collabSelectionBuilder },
+    });
+    collabService.connect();
+
+    if (opts.awareness) {
+      // Mirrors CollabClient#setLocalUser: yCursorPlugin's cursor builder reads
+      // `awareness.getStates().get(clientId).user`.
+      opts.awareness.setLocalStateField('user', opts.user);
+      installCollabCursorsWhenReady(view, ctx, collabService, opts.awareness, () => alive);
+    }
+  });
+
+  const unregisterPopoverHook = registerPopoverHookInstance(view, opts.onMarkAction);
+
+  return {
+    view,
+    getMarkdown(): string {
+      const serializer = editor.ctx.get(serializerCtx);
+      return serializer(view.state.doc);
+    },
+    setReadOnly,
+    applyRemoteMarks(metadata: Record<string, StoredMark>, options?: { hydrateAnchors?: boolean }): void {
+      applyRemoteMarksMutation(view, metadata, options);
+    },
+    removeMark(markId: string): void {
+      if (deleteMark(view, markId)) return;
+      removeAskMark(view, markId);
+    },
+    focusMark(markId: string): void {
+      const escaped = cssEscapeAttrValue(markId);
+      const elements = view.dom.querySelectorAll<HTMLElement>(`[data-id="${escaped}"]`);
+      if (elements.length === 0) return;
+      elements[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      for (const element of elements) {
+        element.classList.add(PULSE_CLASS);
+        window.setTimeout(() => element.classList.remove(PULSE_CLASS), PULSE_DURATION_MS);
+      }
+    },
+    destroy(): void {
+      alive = false;
+      unregisterPopoverHook();
+      editor.action((ctx) => {
+        const collabService = ctx.get(collabServiceCtx);
+        collabService.disconnect();
+      });
+      void editor.destroy();
+    },
+  };
+}
+
+export default createProofEditor;
