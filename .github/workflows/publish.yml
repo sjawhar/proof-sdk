@@ -1,0 +1,45 @@
+name: Publish @sjawhar/proof-editor
+
+# Publishes the library entry (src/lib.ts + src/lib-headless.ts), not the
+# proof-sdk app. Triggered by pushing a `v*` tag (e.g. `v0.1.0`), matching
+# package.json's version. Requires an NPM_TOKEN repository secret with
+# publish access to the @sjawhar npm scope — see the PR description for
+# whether that secret exists yet.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      # package-lock.json is gitignored in this repo (see .gitignore: "keep
+      # package.json"), so there is no lockfile to `npm ci` against.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build library
+        run: npm run build:lib
+
+      # The library's own README.lib.md, not the app's README.md, is what
+      # should render on npmjs.com. This overwrites README.md only in this
+      # ephemeral CI checkout, right before packing — it is never committed.
+      - name: Use library README for the published package
+        run: cp README.lib.md README.md
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

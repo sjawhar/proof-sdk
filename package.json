@@ -1,9 +1,70 @@
 {
-  "name": "proof-sdk",
+  "name": "@sjawhar/proof-editor",
   "version": "0.1.0",
   "description": "Open-source collaborative markdown editor with provenance tracking and an agent HTTP bridge",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sjawhar/proof-sdk.git"
+  },
   "private": false,
   "type": "module",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./headless": {
+      "import": "./dist/headless.js",
+      "default": "./dist/headless.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "peerDependencies": {
+    "@milkdown/core": "^7.5.0",
+    "@milkdown/kit": "^7.5.0",
+    "@milkdown/prose": "^7.5.0",
+    "@milkdown/preset-commonmark": "^7.5.0",
+    "@milkdown/preset-gfm": "^7.5.0",
+    "remark-frontmatter": "^5.0.0",
+    "@milkdown/plugin-history": "^7.5.0",
+    "@milkdown/plugin-collab": "^7.18.0",
+    "@milkdown/plugin-listener": "^7.5.0",
+    "@milkdown/plugin-cursor": "^7.5.0",
+    "@milkdown/plugin-clipboard": "^7.5.0",
+    "@milkdown/theme-nord": "^7.5.0",
+    "yjs": "^13.6.20",
+    "y-prosemirror": "^1.2.19",
+    "y-protocols": "^1.0.5",
+    "@hocuspocus/provider": "^2.15.2",
+    "@milkdown/transformer": "^7.5.0",
+    "unified": "^11.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@milkdown/plugin-history": { "optional": true },
+    "@milkdown/plugin-collab": { "optional": true },
+    "@milkdown/plugin-listener": { "optional": true },
+    "@milkdown/plugin-cursor": { "optional": true },
+    "@milkdown/plugin-clipboard": { "optional": true },
+    "@milkdown/theme-nord": { "optional": true },
+    "yjs": { "optional": true },
+    "y-prosemirror": { "optional": true },
+    "y-protocols": { "optional": true },
+    "@hocuspocus/provider": { "optional": true },
+    "@milkdown/transformer": { "optional": true },
+    "unified": { "optional": true },
+    "remark-parse": { "optional": true },
+    "remark-stringify": { "optional": true },
+    "remark-gfm": { "optional": true }
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -11,6 +72,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/finalize-web-build.mjs",
+    "build:lib": "vite build -c vite.lib.config.ts && cp src/lib.css dist/style.css",
     "serve": "tsx server/index.ts",
     "test": "npm run test:proof-sdk && npm run test:server-routes-share",
     "test:proof-sdk": "tsx src/tests/proof-sdk-agent-bridge-client.test.ts",
