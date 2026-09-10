@@ -1,9 +1,4 @@
 import type { DecorationAttrs } from '@milkdown/kit/prose/view';
-import {
-  createAgentFaceElement,
-  isAgentIdentity,
-  resolveAgentFamily,
-} from '../../ui/agent-identity-icon';
 
 function normalizeUserName(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
@@ -62,80 +57,39 @@ export function installCollabCursorStyles(): void {
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
     }
-
-    .proof-collab-cursor__face {
-      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.12));
+    .proof-collab-cursor__label {
+      display: inline-block;
     }
+
   `;
   document.head.appendChild(style);
 }
 
-export function collabCursorBuilder(user: any): HTMLElement {
+export function collabCursorBuilder(user: unknown): HTMLElement {
   installCollabCursorStyles();
 
-  const name = normalizeUserName(user?.name, 'User');
-  const color = normalizeColor(user?.color, '#60a5fa');
-  const avatar = typeof user?.avatar === 'string' && user.avatar.trim() ? user.avatar.trim() : null;
-  const family = resolveAgentFamily({ name, avatar });
-  const shouldRenderAgentFace = isAgentIdentity({ name, avatar });
-
+  const source = typeof user === 'object' && user !== null ? user : {};
+  const name = normalizeUserName('name' in source ? source.name : undefined, 'User');
+  const color = normalizeColor('color' in source ? source.color : undefined, '#60a5fa');
   const cursorWidget = document.createElement('span');
   cursorWidget.className = 'ProseMirror-yjs-cursor proof-collab-cursor';
   cursorWidget.style.setProperty('--proof-collab-cursor-color', color);
 
-  const label = document.createElement('div');
+  // The cursor is a widget in the contenteditable. Its label must stay inline so browsers
+  // do not move a post-update text selection into a block descendant of the decoration.
+  const label = document.createElement('span');
   label.className = 'proof-collab-cursor__label';
-  if (shouldRenderAgentFace) {
-    label.style.display = 'inline-flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '6px';
-    label.dataset.agentFamily = family;
-
-    const icon = createAgentFaceElement({
-      family,
-      size: 14,
-      title: `${name} icon`,
-      wrapperClassName: 'proof-collab-cursor__face',
-      className: 'proof-collab-cursor__face-svg',
-    });
-
-    const text = document.createElement('span');
-    text.textContent = name;
-
-    label.replaceChildren(icon, text);
-  } else if (avatar) {
-    label.style.display = 'inline-flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '6px';
-
-    const img = document.createElement('img');
-    img.src = avatar;
-    img.alt = '';
-    img.width = 14;
-    img.height = 14;
-    img.loading = 'lazy';
-    img.decoding = 'async';
-    img.style.borderRadius = '999px';
-    img.style.objectFit = 'cover';
-    img.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.12)';
-
-    const text = document.createElement('span');
-    text.textContent = name;
-
-    label.replaceChildren(img, text);
-  } else {
-    label.textContent = name;
-  }
-
-  // y-prosemirror's default builder uses U+2060 separators to ensure stable inline layout.
+  label.contentEditable = 'false';
+  label.textContent = name;
   cursorWidget.appendChild(document.createTextNode('\u2060'));
   cursorWidget.appendChild(label);
   cursorWidget.appendChild(document.createTextNode('\u2060'));
   return cursorWidget;
 }
 
-export function collabSelectionBuilder(user: any): DecorationAttrs {
-  const color = normalizeColor(user?.color, '#60a5fa');
+export function collabSelectionBuilder(user: unknown): DecorationAttrs {
+  const source = typeof user === 'object' && user !== null ? user : {};
+  const color = normalizeColor('color' in source ? source.color : undefined, '#60a5fa');
   return {
     class: 'ProseMirror-yjs-selection proof-collab-selection',
     style: [

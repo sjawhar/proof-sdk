@@ -33,7 +33,7 @@ function sleep(ms: number): Promise<void> {
   return promise;
 }
 
-function waitForPlaywrightAction(action: 'click' | 'hover' | 'type'): Promise<void> {
+function waitForPlaywrightAction(action: 'click' | 'hover' | 'type' | 'type-remote'): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
   const continueAction = () => {
     Object.assign(window, { __smokeAction: null });
@@ -346,10 +346,19 @@ async function main(): Promise<void> {
     replies.some((action) => action.kind === 'reply' && 'text' in action && action.text === 'reply text'),
     JSON.stringify({ replyBox: !!replyBox, replyButton: !!replyButton, disabled: replyButton?.disabled, replies }),
   );
-  handleB2.destroy();
   const authoredTree = JSON.stringify(docA.getXmlFragment('prosemirror').toJSON());
+  // --- 9. typing remains live after a remote edit and remote cursor decoration ---
+  handleA.setMarkdown('## Database\n\nUse SQLite\n\n```ts\nconst x = 1;\n```\n');
+  await sleep(200);
+  await waitForPlaywrightAction('type-remote');
+  await sleep(400);
+  record(
+    'typing in B after a remote edit appears in A',
+    handleA.view.state.doc.textContent.includes('hello from B'),
+  );
+  handleB2.destroy();
 
-  // --- 9. setMarkdown replaces the document ---
+  // --- 10. setMarkdown replaces the document ---
   const setMarkdownCandidate: unknown = handleC;
   if (
     typeof setMarkdownCandidate === 'object'
@@ -363,7 +372,7 @@ async function main(): Promise<void> {
   } else {
     record('setMarkdown renders parsed markdown', false, 'method is absent');
   }
-  // --- 10. scoped CSS: the page body is untouched; the actor is the user ---
+  // --- 11. scoped CSS: the page body is untouched; the actor is the user ---
   record('lib.css leaves body alone', getComputedStyle(document.body).marginTop === '8px');
   await sleep(200);
   record('typing is authored by human:<user>', authoredTree.includes('human:Alice'), authoredTree);
@@ -375,7 +384,52 @@ async function main(): Promise<void> {
   log('DONE');
 }
 
-main().catch((error) => {
+interface TwoContextEditor {
+  applyAwareness(update: number[]): void;
+  applyDocument(update: number[]): void;
+  awarenessUpdate(): number[];
+  documentUpdate(): number[];
+  handle: ProofEditorHandle;
+}
+
+async function twoContextMain(): Promise<void> {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const query = new URLSearchParams(window.location.search);
+  const documentUpdate = query.get('document');
+  if (documentUpdate !== null) {
+    Y.applyUpdate(doc, new Uint8Array(JSON.parse(documentUpdate)), 'relay');
+  }
+  const awarenessUpdate = query.get('awareness');
+  if (awarenessUpdate !== null) {
+    applyAwarenessUpdate(awareness, new Uint8Array(JSON.parse(awarenessUpdate)), 'relay');
+  }
+  const handle = await createProofEditor(document.getElementById('editor-a')!, {
+    awareness,
+    user: { name: 'Smoke', color: '#3b82f6' },
+    ydoc: doc,
+  });
+  const target = window as Window & { __twoContextEditor?: TwoContextEditor };
+  target.__twoContextEditor = {
+    applyAwareness(update) {
+      applyAwarenessUpdate(awareness, new Uint8Array(update), 'relay');
+    },
+    applyDocument(update) {
+      Y.applyUpdate(doc, new Uint8Array(update), 'relay');
+    },
+    awarenessUpdate() {
+      return Array.from(encodeAwarenessUpdate(awareness, [...awareness.getStates().keys()]));
+    },
+    documentUpdate() {
+      return Array.from(Y.encodeStateAsUpdate(doc));
+    },
+    handle,
+  };
+}
+
+const pageQuery = new URLSearchParams(window.location.search);
+const run = pageQuery.has('two-context') ? twoContextMain : main;
+run().catch((error) => {
   log(`FATAL: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
   Object.assign(window, {
     __smokeResults: results,

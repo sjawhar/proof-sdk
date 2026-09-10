@@ -24,9 +24,76 @@ await page.evaluate(() => window.__smokeContinueAction());
 await page.waitForFunction(() => window.__smokeAction === 'click', null, { timeout: 90_000 });
 await page.locator('#editor-b2 [data-mark-id]').click();
 await page.evaluate(() => window.__smokeContinueAction());
+await page.waitForFunction(() => window.__smokeAction === 'type-remote', null, { timeout: 90_000 });
+await page.keyboard.press('Escape');
+await page.waitForFunction(() =>
+  Array.from(document.querySelectorAll('.mark-popover-backdrop')).every(
+    (element) => getComputedStyle(element).display === 'none',
+  ),
+);
+const editorB = page.locator('#editor-b > .proof-editor .ProseMirror');
+await editorB.click();
+await page.keyboard.press('Control+End');
+await page.keyboard.press('Enter');
+await page.keyboard.type('hello from B');
+await page.waitForFunction(() => document.querySelector('#editor-b .ProseMirror')?.textContent?.includes('hello from B') ?? false, null, { timeout: 5000 });
+await page.evaluate(() => window.__smokeContinueAction());
 await page.waitForFunction(() => /DONE|FATAL/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 90_000 });
 const results = await page.evaluate(() => window.__smokeResults ?? {});
 const fatal = await page.evaluate(() => window.__smokeFatal);
+let remoteInputPass = false;
+try {
+  const alice = await browser.newContext();
+  const bob = await browser.newContext();
+  const alicePage = await alice.newPage();
+  const bobPage = await bob.newPage();
+  await alicePage.goto('http://127.0.0.1:4173/?two-context');
+  await alicePage.waitForFunction(() => window.__twoContextEditor !== undefined);
+  const initial = await alicePage.evaluate(() => {
+    window.__twoContextEditor.handle.setMarkdown('## Database\n\n```ts\nconst x = 1;\n```\n');
+    return {
+      awareness: window.__twoContextEditor.awarenessUpdate(),
+      document: window.__twoContextEditor.documentUpdate(),
+    };
+  });
+  await bobPage.goto(
+    `http://127.0.0.1:4173/?two-context&document=${encodeURIComponent(JSON.stringify(initial.document))}&awareness=${encodeURIComponent(JSON.stringify(initial.awareness))}`,
+  );
+  await bobPage.waitForFunction(() => window.__twoContextEditor !== undefined);
+  const aliceEditor = alicePage.locator('#editor-a .ProseMirror');
+  const bobEditor = bobPage.locator('#editor-a .ProseMirror');
+  await aliceEditor.click();
+  await alicePage.keyboard.press('Control+End');
+  await alicePage.keyboard.type('alice remote edit');
+  await aliceEditor.getByText('alice remote edit').waitFor();
+  const aliceUpdate = await alicePage.evaluate(() => ({
+    awareness: window.__twoContextEditor.awarenessUpdate(),
+    document: window.__twoContextEditor.documentUpdate(),
+  }));
+  await bobPage.evaluate(({ awareness, document }) => {
+    window.__twoContextEditor.applyDocument(document);
+    window.__twoContextEditor.applyAwareness(awareness);
+  }, aliceUpdate);
+  await bobEditor.getByText('alice remote edit').waitFor();
+  await bobPage.waitForTimeout(400);
+  await bobEditor.click();
+  await bobPage.keyboard.press('Control+End');
+  await bobPage.keyboard.press('Enter');
+  await bobPage.keyboard.type('hello from B after remote');
+  await bobEditor.getByText('hello from B after remote').waitFor({ timeout: 5000 });
+  const bobUpdate = await bobPage.evaluate(() => window.__twoContextEditor.documentUpdate());
+  await alicePage.evaluate((document) => window.__twoContextEditor.applyDocument(document), bobUpdate);
+  const relayState = await alicePage.evaluate(() => ({
+    markdown: window.__twoContextEditor.handle.getMarkdown(),
+    text: window.__twoContextEditor.handle.view.state.doc.textContent,
+  }));
+  console.log(`two-context relay state: ${JSON.stringify(relayState)}`);
+  await aliceEditor.getByText('hello from B after remote').waitFor({ timeout: 5000 });
+  remoteInputPass = true;
+} catch (error) {
+  console.error(`two-context remote input: ${error instanceof Error ? error.message : String(error)}`);
+}
+results['typing after a remote edit reaches a separate browser context'] = remoteInputPass;
 await browser.close();
 await server.close();
 const failed = Object.entries(results).filter(([, pass]) => !pass).map(([name]) => name);
