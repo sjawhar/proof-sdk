@@ -68,23 +68,28 @@ function getAnchorBox(view: EditorView, range: MarkRange) {
 
 /** Centers the bar horizontally on the selection's anchor box, clamped to the
  *  viewport by MARGIN, and places it above the selection when there's room,
- *  else below, else clamped to the viewport — always near the selection
- *  rather than docked in the editor's gutter (mark-selection-bar.ts's
- *  positioning behavior, which this deliberately does not mirror). */
+ *  else below, else clamped — always near the selection, never docked in the
+ *  editor's gutter. "Room above" is measured against the editor's own top edge,
+ *  not the viewport's: the bar is fixed-positioned, so a selection on the
+ *  document's first line would otherwise put it over whatever the host renders
+ *  above the editor (tabs, a toolbar) and swallow clicks meant for those. */
 export function positionBar(bar: HTMLElement, view: EditorView, range: MarkRange): void {
   try {
     const anchorBox = getAnchorBox(view, range);
     if (typeof bar.getBoundingClientRect !== 'function') return;
+    if (typeof view.dom.getBoundingClientRect !== 'function') return;
     const barRect = bar.getBoundingClientRect();
+    const editorRect = view.dom.getBoundingClientRect();
     const viewportW = window.innerWidth;
     const viewportH = window.innerHeight;
-    const maxTop = Math.max(MARGIN, viewportH - barRect.height - MARGIN);
+    const minTop = Math.max(MARGIN, editorRect.top);
+    const maxTop = Math.max(minTop, viewportH - barRect.height - MARGIN);
 
     const aboveTop = anchorBox.top - barRect.height - MARGIN;
     const belowTop = anchorBox.bottom + MARGIN;
-    const hasRoomAbove = aboveTop >= MARGIN;
+    const hasRoomAbove = aboveTop >= minTop;
     const hasRoomBelow = belowTop + barRect.height <= viewportH - MARGIN;
-    const top = hasRoomAbove ? aboveTop : hasRoomBelow ? belowTop : Math.max(MARGIN, Math.min(anchorBox.top, maxTop));
+    const top = hasRoomAbove ? aboveTop : hasRoomBelow ? belowTop : Math.max(minTop, Math.min(anchorBox.top, maxTop));
     const center = (anchorBox.left + anchorBox.right) / 2;
     const left = Math.max(MARGIN, Math.min(center - barRect.width / 2, viewportW - barRect.width - MARGIN));
     bar.style.left = `${left}px`;

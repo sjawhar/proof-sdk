@@ -46,11 +46,11 @@ function makeBar(rect: { width: number; height: number }): HTMLElement {
   } as unknown as HTMLElement;
 }
 
-// No `dom` rect at all: positionBar must never consult the editor's own
-// bounding box (there is no gutter to dock into any more).
-function makeView(coords: { from: Box; to: Box }): EditorView {
+// The editor rect only bounds the bar vertically (it must never rise above the
+// editor's top edge); there is no gutter to dock into.
+function makeView(coords: { from: Box; to: Box }, editor: Box = { top: 0, bottom: 10_000, left: 0, right: 10_000 }): EditorView {
   return {
-    dom: {},
+    dom: { getBoundingClientRect: () => editor },
     coordsAtPos: (pos: number) => (pos === 0 ? coords.from : coords.to),
   } as unknown as EditorView;
 }
@@ -124,6 +124,23 @@ test('falls back to below the selection when there is no room above', () => {
 
   const barTop = parseFloat(bar.style.top);
   assert(barTop >= selection.bottom, `Expected the bar below the selection, got top=${barTop}`);
+});
+
+test('never rises above the editor: a first-line selection puts the bar below it, not over the host chrome', () => {
+  // Host layout: tabs at y 175-219, editor starting at y 230, selection on the first line.
+  const selection: Box = { top: 235, bottom: 254, left: 427, right: 470 };
+  const editor: Box = { top: 230, bottom: 900, left: 344, right: 1192 };
+  const view = makeView({ from: selection, to: selection }, editor);
+  const bar = makeBar({ width: 195, height: 36 });
+  const range: MarkRange = { from: 0, to: 1 };
+
+  withMockWindow({ innerWidth: 1280, innerHeight: 720 }, () => {
+    positionBar(bar, view, range);
+  });
+
+  const barTop = parseFloat(bar.style.top);
+  assert(barTop >= editor.top, `Expected the bar inside the editor (top >= ${editor.top}), got top=${barTop}`);
+  assert(barTop >= selection.bottom, `Expected the bar below the first-line selection, got top=${barTop}`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
