@@ -15,6 +15,7 @@
 
 import { Editor, editorViewCtx, marksCtx, nodesCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { schema as commonmarkSchema } from '@milkdown/preset-commonmark';
+import { configureDispatchLinks } from './dispatch-links.js';
 import { schema as gfmSchema } from '@milkdown/preset-gfm';
 import { Schema, type Node as ProseMirrorNode } from '@milkdown/prose/model';
 import { ParserState, SerializerState } from '@milkdown/transformer';
@@ -78,6 +79,7 @@ export async function createHeadlessProof(): Promise<HeadlessProofEditor> {
     }
   }
 
+  configureDispatchLinks(ctx);
   const nodes = Object.fromEntries(ctx.get(nodesCtx) as never);
   const marks = Object.fromEntries(ctx.get(marksCtx) as never);
   const schema = new Schema({ nodes, marks });

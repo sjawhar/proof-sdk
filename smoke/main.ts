@@ -369,6 +369,26 @@ async function main(): Promise<void> {
     setMarkdownCandidate.setMarkdown('# Title\n\nBody paragraph.');
     await sleep(100);
     record('setMarkdown renders parsed markdown', !!handleC.view.dom.querySelector('h1') && handleC.view.dom.textContent!.includes('Body paragraph.'));
+    // Soft breaks are an import-time transform: setMarkdown joins them with a space...
+    setMarkdownCandidate.setMarkdown('First soft line\ncontinues here.');
+    await sleep(100);
+    record(
+      'setMarkdown joins a soft line break with a space',
+      handleC.view.state.doc.textContent === 'First soft line continues here.',
+      JSON.stringify({ text: handleC.view.state.doc.textContent, json: handleC.view.state.doc.toJSON() }),
+    );
+    // ...while a text/plain paste, which goes through the editor's shared parser, keeps its line break.
+    const pasteData = new DataTransfer();
+    pasteData.setData('text/plain', 'alpha\nbeta');
+    handleC.view.focus();
+    handleC.view.dispatch(handleC.view.state.tr.setSelection(TextSelection.atEnd(handleC.view.state.doc)));
+    handleC.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: pasteData, bubbles: true, cancelable: true }));
+    await sleep(150);
+    record(
+      'a text/plain paste keeps its line break',
+      handleC.view.state.doc.textContent.includes('alpha\nbeta'),
+      handleC.view.state.doc.textContent,
+    );
   } else {
     record('setMarkdown renders parsed markdown', false, 'method is absent');
   }
