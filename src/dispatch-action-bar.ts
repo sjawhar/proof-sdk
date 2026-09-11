@@ -12,7 +12,10 @@
  * click just created this specific mark".
  *
  * This module is a full replacement, registered instead of (not alongside)
- * `markSelectionBarPlugin`, that mirrors its positioning/lifecycle logic and
+ * `markSelectionBarPlugin`, that mirrors its lifecycle logic — but always
+ * centers the bar on the selection instead of docking it in the editor's
+ * gutter, per product feedback that a docked bar reads as disconnected from
+ * the text it acts on — and
  * implements exactly the three MarkAction kinds the contract defines for the
  * selection bar: Comment, Suggest, and Ask (dropping the upstream bar's Flag
  * button, which has no corresponding MarkAction kind). Each button applies
@@ -35,7 +38,6 @@ import type { MarkAction, SelectionBarActionKind } from './dispatch-marks';
 
 const actionBarKey = new PluginKey('dispatch-action-bar');
 const MARGIN = 12;
-const DOCK_GAP = 16;
 
 export interface ActionBarOptions {
   by: string;
@@ -64,35 +66,19 @@ function getAnchorBox(view: EditorView, range: MarkRange) {
   };
 }
 
-/** Simplified from mark-selection-bar.ts's positionBar: no app-shell fixed-banner
- *  inset scan (share-banner/readonly-banner/…), since this library renders no such
- *  chrome — a host embedding its own fixed banners can wrap `root` with its own
- *  top padding, which this bar's viewport-relative math already respects. */
-function positionBar(bar: HTMLElement, view: EditorView, range: MarkRange): void {
+/** Centers the bar horizontally on the selection's anchor box, clamped to the
+ *  viewport by MARGIN, and places it above the selection when there's room,
+ *  else below, else clamped to the viewport — always near the selection
+ *  rather than docked in the editor's gutter (mark-selection-bar.ts's
+ *  positioning behavior, which this deliberately does not mirror). */
+export function positionBar(bar: HTMLElement, view: EditorView, range: MarkRange): void {
   try {
     const anchorBox = getAnchorBox(view, range);
-    if (typeof view.dom.getBoundingClientRect !== 'function') return;
     if (typeof bar.getBoundingClientRect !== 'function') return;
-    const editorRect = view.dom.getBoundingClientRect();
     const barRect = bar.getBoundingClientRect();
     const viewportW = window.innerWidth;
     const viewportH = window.innerHeight;
     const maxTop = Math.max(MARGIN, viewportH - barRect.height - MARGIN);
-    const spaceRight = viewportW - editorRect.right;
-    const spaceLeft = editorRect.left;
-    const canDockRight = spaceRight >= barRect.width + DOCK_GAP;
-    const canDockLeft = spaceLeft >= barRect.width + DOCK_GAP;
-
-    if (canDockRight || canDockLeft) {
-      const dockRight = canDockRight || !canDockLeft;
-      const left = dockRight
-        ? Math.max(MARGIN, Math.min(editorRect.right + DOCK_GAP, viewportW - barRect.width - MARGIN))
-        : Math.max(MARGIN, Math.min(editorRect.left - DOCK_GAP - barRect.width, viewportW - barRect.width - MARGIN));
-      const top = Math.max(MARGIN, Math.min(anchorBox.top - 6, maxTop));
-      bar.style.left = `${left}px`;
-      bar.style.top = `${top}px`;
-      return;
-    }
 
     const aboveTop = anchorBox.top - barRect.height - MARGIN;
     const belowTop = anchorBox.bottom + MARGIN;

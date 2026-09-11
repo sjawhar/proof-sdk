@@ -29,6 +29,7 @@ import { frontmatterSchema } from './editor/schema/frontmatter.js';
 import { proofMarkPlugins } from './editor/schema/proof-marks.js';
 import { remarkProofMarks, proofMarkHandler } from './formats/remark-proof-marks.js';
 import { dispatchMarkPlugins, remarkDispatchMarks, dispatchMarkHandler } from './dispatch-marks.js';
+import { remarkSoftBreakAsSpace } from './dispatch-soft-breaks.js';
 
 export interface HeadlessProofEditor {
   schema: Schema;
@@ -88,7 +89,8 @@ export async function createHeadlessProof(): Promise<HeadlessProofEditor> {
     .use(remarkFrontmatter, ['yaml'])
     .use(remarkGfm)
     .use(remarkProofMarks)
-    .use(remarkDispatchMarks);
+    .use(remarkDispatchMarks)
+    .use(remarkSoftBreakAsSpace);
   const parseMarkdown = ParserState.create(schema as never, parseProcessor as never) as unknown as (
     markdown: string,
   ) => ProseMirrorNode;

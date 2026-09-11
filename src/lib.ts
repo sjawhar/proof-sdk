@@ -79,6 +79,7 @@ import type { MarkAction } from './dispatch-marks';
 import { dispatchActionBarPlugin } from './dispatch-action-bar';
 import { registerPopoverHookInstance } from './dispatch-popover-hook';
 import { dispatchMarkEventsPlugin } from './dispatch-mark-events';
+import { remarkSoftBreakAsSpacePlugin } from './dispatch-soft-breaks';
 
 export type { MarkAction, SelectionBarActionKind, PopoverActionKind } from './dispatch-marks';
 export type { StoredMark } from './editor/plugins/marks';
@@ -234,6 +235,7 @@ export async function createProofEditor(
     // Register remark plugins for proof marks and dispatchAsk parsing
     .use(remarkProofMarksPlugin)
     .use(remarkDispatchMarksPlugin)
+    .use(remarkSoftBreakAsSpacePlugin)
     // Register contexts
     .use(heatmapCtx)
     .use(agentCursorCtx)
