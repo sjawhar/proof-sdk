@@ -27,10 +27,13 @@ import {
   defaultValueCtx,
   editorViewCtx,
   parserCtx,
+  remarkCtx,
+  schemaCtx,
   serializerCtx,
   remarkStringifyOptionsCtx,
   prosePluginsCtx,
 } from '@milkdown/core';
+import { ParserState } from '@milkdown/transformer';
 import { commonmark } from '@milkdown/preset-commonmark';
 import { gfm } from '@milkdown/preset-gfm';
 import { history } from '@milkdown/plugin-history';
@@ -79,7 +82,7 @@ import type { MarkAction } from './dispatch-marks';
 import { dispatchActionBarPlugin } from './dispatch-action-bar';
 import { registerPopoverHookInstance } from './dispatch-popover-hook';
 import { dispatchMarkEventsPlugin } from './dispatch-mark-events';
-import { remarkSoftBreakAsSpacePlugin } from './dispatch-soft-breaks';
+import { remarkSoftBreakAsSpace } from './dispatch-soft-breaks';
 
 export type { MarkAction, SelectionBarActionKind, PopoverActionKind } from './dispatch-marks';
 export type { StoredMark } from './editor/plugins/marks';
@@ -235,7 +238,6 @@ export async function createProofEditor(
     // Register remark plugins for proof marks and dispatchAsk parsing
     .use(remarkProofMarksPlugin)
     .use(remarkDispatchMarksPlugin)
-    .use(remarkSoftBreakAsSpacePlugin)
     // Register contexts
     .use(heatmapCtx)
     .use(agentCursorCtx)
@@ -325,7 +327,15 @@ export async function createProofEditor(
       return serializer(view.state.doc);
     },
     setMarkdown(markdown: string): void {
-      const parsed = editor.ctx.get(parserCtx)(markdown);
+      // Markdown import only: soft line breaks become spaces here and in the headless parser,
+      // never in the shared parserCtx, which the clipboard plugin also runs text/plain pastes
+      // through - a pasted "alpha\nbeta" must keep its line break.
+      // remarkCtx holds a frozen processor; calling it yields an unfrozen copy to extend.
+      const importParser = ParserState.create(
+        editor.ctx.get(schemaCtx),
+        editor.ctx.get(remarkCtx)().use(remarkSoftBreakAsSpace),
+      );
+      const parsed = importParser(markdown);
       const { state } = view;
       view.dispatch(state.tr.replaceWith(0, state.doc.content.size, parsed.content));
     },

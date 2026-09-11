@@ -21,13 +21,19 @@
  * node for this transform to see.
  */
 
-import { $remark } from '@milkdown/kit/utils';
-
 type MdastNode = {
   type: string;
   value?: string;
+  data?: { isInline?: boolean };
   children?: MdastNode[];
 };
+
+/** Milkdown's own `remarkLineBreak` (registered by the commonmark preset, so it runs before
+ *  this transform) has already split each soft break out of its text node into a
+ *  `break` node tagged `data.isInline`; a real hard break is a `break` without that tag. */
+function isSoftBreak(node: MdastNode): boolean {
+  return node.type === 'break' && node.data?.isInline === true;
+}
 
 function visit(node: MdastNode): void {
   if (node.type === 'code' || node.type === 'inlineCode') return;
@@ -36,15 +42,32 @@ function visit(node: MdastNode): void {
     return;
   }
   if (!node.children) return;
-  for (const child of node.children) visit(child);
+  const joined: MdastNode[] = [];
+  for (const child of node.children) {
+    if (isSoftBreak(child)) {
+      const previous = joined[joined.length - 1];
+      if (previous && previous.type === 'text' && typeof previous.value === 'string') {
+        previous.value += ' ';
+      } else {
+        joined.push({ type: 'text', value: ' ' });
+      }
+      continue;
+    }
+    visit(child);
+    const previous = joined[joined.length - 1];
+    if (child.type === 'text' && previous && previous.type === 'text' && typeof previous.value === 'string' && typeof child.value === 'string') {
+      previous.value += child.value;
+      continue;
+    }
+    joined.push(child);
+  }
+  node.children = joined;
 }
 
-/** Raw remark transformer factory — use directly in a `unified()` pipeline (headless). */
+/** remark transformer — applied on markdown import only (`setMarkdown` and the headless parser),
+ *  never on the editor's shared parser, which also serves text/plain paste. */
 export function remarkSoftBreakAsSpace() {
   return (tree: MdastNode) => {
     visit(tree);
   };
 }
-
-/** Milkdown-wrapped remark plugin — use in `.use()` alongside the other Dispatch remark plugins (browser). */
-export const remarkSoftBreakAsSpacePlugin = $remark('remarkSoftBreakAsSpace', () => () => remarkSoftBreakAsSpace());
