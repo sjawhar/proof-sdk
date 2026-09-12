@@ -16,6 +16,12 @@
 import { Editor, editorViewCtx, marksCtx, nodesCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { schema as commonmarkSchema } from '@milkdown/preset-commonmark';
 import { type BlockIdGenerator, blockIdSchemas, mintBlockId, withBlockIds } from './editor/schema/block-ids';
+import {
+  blockSchemaPlugins,
+  rejectUnsupportedDirectiveSyntax,
+  remarkTypedBlocks,
+  type BlockSchema,
+} from './block-schema.js';
 import { configureDispatchLinks } from './dispatch-links.js';
 import { schema as gfmSchema } from '@milkdown/preset-gfm';
 import { Schema, type Node as ProseMirrorNode } from '@milkdown/prose/model';
@@ -25,6 +31,7 @@ import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import remarkStringify from 'remark-stringify';
 import { unified } from 'unified';
+import remarkDirective from 'remark-directive';
 
 import { codeBlockExtPlugins } from './editor/schema/code-block-ext.js';
 import { frontmatterSchema } from './editor/schema/frontmatter.js';
@@ -44,6 +51,8 @@ export interface HeadlessProofOptions {
   /** Mints block ids for parsed documents; defaults to random uuids. Fixture
    *  generators and tests pass a deterministic one. */
   blockId?: BlockIdGenerator;
+  /** Typed block schema fetched from the document service before construction. */
+  blockSchema?: BlockSchema;
 }
 
 export async function createHeadlessProof(options: HeadlessProofOptions = {}): Promise<HeadlessProofEditor> {
@@ -74,6 +83,7 @@ export async function createHeadlessProof(options: HeadlessProofOptions = {}): P
     // Frontmatter must be registered after commonmark so `---` parses as YAML.
     ...frontmatterSchema,
     ...codeBlockExtPlugins,
+    ...(options.blockSchema ? blockSchemaPlugins(options.blockSchema) : []),
     ...blockIdSchemas,
     // Some schema nodes reference proof marks (e.g. code_block allows them).
     ...proofMarkPlugins,
@@ -99,18 +109,24 @@ export async function createHeadlessProof(options: HeadlessProofOptions = {}): P
     .use(remarkParse)
     .use(remarkFrontmatter, ['yaml'])
     .use(remarkGfm)
+    .use(remarkDirective, { collapseEmptyAttributes: false, preferShortcut: true })
     .use(remarkProofMarks)
     .use(remarkDispatchMarks)
     .use(remarkSoftBreakAsSpace);
+  if (options.blockSchema) parseProcessor.use(remarkTypedBlocks, options.blockSchema);
   const parse = ParserState.create(schema as never, parseProcessor as never) as unknown as (
     markdown: string,
   ) => ProseMirrorNode;
   const mint = options.blockId ?? mintBlockId;
-  const parseMarkdown = (markdown: string): ProseMirrorNode => withBlockIds(parse(markdown), mint);
+  const parseMarkdown = (markdown: string): ProseMirrorNode => {
+    if (options.blockSchema) rejectUnsupportedDirectiveSyntax(markdown);
+    return withBlockIds(parse(markdown), mint);
+  };
 
   const serializeProcessor = unified()
     .use(remarkGfm)
     .use(remarkFrontmatter, ['yaml'])
+    .use(remarkDirective, { collapseEmptyAttributes: false, preferShortcut: true })
     .use(remarkStringify, {
       handlers: {
         proofMark: proofMarkHandler,

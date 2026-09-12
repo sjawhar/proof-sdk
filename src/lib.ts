@@ -22,6 +22,7 @@
  */
 
 import { BLOCK_ID_DOM_ATTR, blockIdOf, blockIdPlugins } from './editor/schema/block-ids';
+import { blockSchemaPlugins, type BlockSchema, type HostBlockRenderer } from './block-schema';
 import {
   Editor,
   rootCtx,
@@ -53,6 +54,7 @@ import { proofMarkPlugins } from './editor/schema/proof-marks';
 import { codeBlockExtPlugins } from './editor/schema/code-block-ext';
 import { frontmatterSchema } from './editor/schema/frontmatter';
 import { libraryRemarkFrontmatterPlugin } from './lib-remark-frontmatter-plugin';
+import { libraryRemarkDirectivePlugin, typedBlockRemarkPlugin } from './lib-remark-directive-plugin';
 import { remarkProofMarksPlugin } from './editor/schema/remark-proof-marks-plugin';
 import { proofMarkHandler } from './formats/remark-proof-marks';
 
@@ -87,6 +89,13 @@ import { remarkSoftBreakAsSpace } from './dispatch-soft-breaks';
 import { configureDispatchLinks } from './dispatch-links';
 
 export type { MarkAction, SelectionBarActionKind, PopoverActionKind } from './dispatch-marks';
+export type {
+  BlockAttributeKind,
+  BlockAttributeSchema,
+  BlockSchema,
+  BlockTypeSchema,
+  HostBlockRenderer,
+} from './block-schema';
 export type { StoredMark } from './editor/plugins/marks';
 export { BLOCK_ID_ATTR, BLOCK_ID_DOM_ATTR, blockIdOf, isIdentifiedBlock, setBlockIdGenerator } from './editor/schema/block-ids';
 
@@ -121,6 +130,10 @@ export interface CreateProofEditorOptions {
   onMarkHover?: (markId: string | null) => void;
   /** Heatmap rendering mode. Defaults to 'background'. */
   heatMapMode?: HeatMapMode;
+  /** Typed block schema fetched from the document service before editor construction. */
+  blockSchema?: BlockSchema;
+  /** Renders a host-owned typed block node when the schema declares `render: "host"`. */
+  renderBlock?: HostBlockRenderer;
 }
 
 export interface ProofEditorHandle {
@@ -230,12 +243,14 @@ export async function createProofEditor(
     .config(nord)
     .use(commonmark)
     .use(gfm)
-    // Frontmatter must be registered after commonmark so remark-frontmatter
-    // claims `---` before commonmark parses it as a thematic break.
+    // Frontmatter and typed directives register before their node schemas claim their AST nodes.
     .use(libraryRemarkFrontmatterPlugin)
+    .use(libraryRemarkDirectivePlugin)
+    .use(opts.blockSchema ? typedBlockRemarkPlugin(opts.blockSchema) : [])
     .use(frontmatterSchema)
     .use(codeBlockExtPlugins)
     // Every block carries a stable blockId (see ./editor/schema/block-ids.ts).
+    .use(opts.blockSchema ? blockSchemaPlugins(opts.blockSchema, opts.renderBlock) : [])
     .use(blockIdPlugins)
     .use(history)
     .use(listener)

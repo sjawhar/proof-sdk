@@ -48,24 +48,58 @@
     "unified": "^11.0.0",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "remark-directive": "^4.0.0"
   },
   "peerDependenciesMeta": {
-    "@milkdown/plugin-history": { "optional": true },
-    "@milkdown/plugin-collab": { "optional": true },
-    "@milkdown/plugin-listener": { "optional": true },
-    "@milkdown/plugin-cursor": { "optional": true },
-    "@milkdown/plugin-clipboard": { "optional": true },
-    "@milkdown/theme-nord": { "optional": true },
-    "yjs": { "optional": true },
-    "y-prosemirror": { "optional": true },
-    "y-protocols": { "optional": true },
-    "@hocuspocus/provider": { "optional": true },
-    "@milkdown/transformer": { "optional": true },
-    "unified": { "optional": true },
-    "remark-parse": { "optional": true },
-    "remark-stringify": { "optional": true },
-    "remark-gfm": { "optional": true }
+    "@milkdown/plugin-history": {
+      "optional": true
+    },
+    "@milkdown/plugin-collab": {
+      "optional": true
+    },
+    "@milkdown/plugin-listener": {
+      "optional": true
+    },
+    "@milkdown/plugin-cursor": {
+      "optional": true
+    },
+    "@milkdown/plugin-clipboard": {
+      "optional": true
+    },
+    "@milkdown/theme-nord": {
+      "optional": true
+    },
+    "yjs": {
+      "optional": true
+    },
+    "y-prosemirror": {
+      "optional": true
+    },
+    "y-protocols": {
+      "optional": true
+    },
+    "@hocuspocus/provider": {
+      "optional": true
+    },
+    "@milkdown/transformer": {
+      "optional": true
+    },
+    "unified": {
+      "optional": true
+    },
+    "remark-parse": {
+      "optional": true
+    },
+    "remark-stringify": {
+      "optional": true
+    },
+    "remark-gfm": {
+      "optional": true
+    },
+    "remark-directive": {
+      "optional": true
+    }
   },
   "workspaces": [
     "packages/*",
@@ -104,6 +138,7 @@
     "better-sqlite3": "^12.6.2",
     "express": "^5.2.1",
     "prismjs": "^1.30.0",
+    "remark-directive": "^4.0.0",
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "satori": "^0.24.1",
