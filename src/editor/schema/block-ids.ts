@@ -28,11 +28,11 @@ import {
   headingSchema,
   hrSchema,
   htmlSchema,
-  listItemSchema,
   orderedListSchema,
   paragraphSchema,
 } from '@milkdown/preset-commonmark';
 import {
+  extendListItemSchemaForTask,
   footnoteDefinitionSchema,
   tableCellSchema,
   tableHeaderRowSchema,
@@ -144,7 +144,7 @@ export const blockIdSchemas = [
   blockquoteSchema,
   bulletListSchema,
   orderedListSchema,
-  listItemSchema,
+  extendListItemSchemaForTask,
   hrSchema,
   htmlSchema,
   tableSchema,

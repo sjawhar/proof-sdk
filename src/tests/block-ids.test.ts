@@ -92,6 +92,28 @@ await test('parseMarkdown stamps every block, nested ones included, with unique 
   }
 });
 
+await test('block IDs preserve GFM task-list attrs, DOM rendering, and markdown round-trip', async () => {
+  const markdown = '- [ ] task\n- [x] done\n';
+  const { schema, parseMarkdown, serializeMarkdown } = await createHeadlessProof({ blockId: counter('task') });
+  const doc = parseMarkdown(markdown);
+  const list = doc.child(0);
+  const unchecked = list.child(0);
+  const checked = list.child(1);
+
+  assert(unchecked.attrs.checked === false, `unchecked task attrs = ${JSON.stringify(unchecked.attrs)}`);
+  assert(checked.attrs.checked === true, `checked task attrs = ${JSON.stringify(checked.attrs)}`);
+  assert(blockIdOf(unchecked) !== null && blockIdOf(checked) !== null, 'task items lost their block ids');
+
+  const dom = schema.nodes.list_item.spec.toDOM!(unchecked) as unknown[];
+  const attrs = dom[1] as Record<string, unknown>;
+  assert(attrs['data-item-type'] === 'task', `task item DOM attrs = ${JSON.stringify(attrs)}`);
+  assert(attrs['data-checked'] === false, `unchecked task DOM attrs = ${JSON.stringify(attrs)}`);
+
+  const serialized = serializeMarkdown(doc);
+  assert(serialized.includes('[ ] task') && serialized.includes('[x] done'), `task syntax was lost: ${serialized}`);
+  assert(serializeMarkdown(parseMarkdown(serialized)) === serialized, 'task markdown did not round-trip stably');
+});
+
 await test('ids never reach markdown: the round-trip is byte-identical with and without them', async () => {
   const stamped = await createHeadlessProof({ blockId: counter('b') });
   const doc = stamped.parseMarkdown(corpus);
