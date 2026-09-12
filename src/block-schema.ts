@@ -14,7 +14,7 @@ export interface BlockAttributeSchema {
 
 export interface BlockTypeSchema {
   name: string;
-  content: 'paragraph+';
+  content: string;
   render: 'host';
   attributes: Readonly<Record<string, BlockAttributeSchema>>;
 }
@@ -51,7 +51,9 @@ export function validateBlockSchema(schema: BlockSchema): void {
     if (!directiveName(type.name)) throw new Error(`typed block name ${JSON.stringify(type.name)} is invalid`);
     if (names.has(type.name)) throw new Error(`typed block ${JSON.stringify(type.name)} is declared twice`);
     names.add(type.name);
-    if (type.content !== 'paragraph+') throw new Error(`typed block ${JSON.stringify(type.name)} has unsupported content ${JSON.stringify(type.content)}`);
+    if (typeof type.content !== 'string' || type.content.trim() === '') {
+      throw new Error(`typed block ${JSON.stringify(type.name)} must declare a non-empty content rule`);
+    }
     if (type.render !== 'host') throw new Error(`typed block ${JSON.stringify(type.name)} has unsupported render ${JSON.stringify(type.render)}`);
     for (const [name, attribute] of Object.entries(type.attributes)) {
       if (!directiveName(name)) throw new Error(`typed block ${JSON.stringify(type.name)} attribute ${JSON.stringify(name)} is invalid`);
