@@ -102,6 +102,59 @@ await test('headless Proof accepts a paragraph sequence followed by an optional 
   assert(serialized === markdown, `paragraph+ bullet_list? typed block markdown did not round-trip: ${JSON.stringify(serialized)}`);
 });
 
+await test('headless Proof round-trips directive-like content in fenced code blocks', async () => {
+  const proof = await createHeadlessProof({ blockSchema });
+  for (const markdown of [
+    '```md\n::: {.callout}\n```\n',
+    '```md\n:::callout{#callout-1 kind="warning" title="Read this"}\n```\n',
+  ]) {
+    assert(
+      proof.serializeMarkdown(proof.parseMarkdown(markdown)) === markdown,
+      `fenced directive-like code did not round-trip: ${JSON.stringify(markdown)}`,
+    );
+  }
+});
+await test('headless Proof accepts directive-like content in indented code blocks', async () => {
+  const proof = await createHeadlessProof({ blockSchema });
+  const doc = proof.parseMarkdown('    ::: {.callout}\n');
+  assert(doc.child(0).type.name === 'code_block', `parsed node type = ${doc.child(0).type.name}`);
+});
+await test('headless Proof rejects Pandoc fenced div syntax outside code blocks', async () => {
+  const proof = await createHeadlessProof({ blockSchema });
+  let thrown: unknown;
+  try {
+    proof.parseMarkdown('::: {.callout}\nBody text.\n:::\n');
+  } catch (error) {
+    thrown = error;
+  }
+  assert(thrown instanceof Error, 'Pandoc fenced div syntax did not fail');
+  assert(
+    thrown instanceof Error
+      && thrown.message === 'line 1: typed block directives use :::name{...}; Pandoc fenced divs and malformed directives are not supported',
+    `Pandoc fenced div error = ${(thrown as Error).message}`,
+  );
+});
+await test('headless Proof rejects leaf and text directives', async () => {
+  const proof = await createHeadlessProof({ blockSchema });
+  const cases = [
+    ['::note{value}\n', 'leaf directives (::name) are not supported'],
+    [':note[value]\n', 'text directives (:name{...}) are not supported'],
+  ] as const;
+  for (const [markdown, message] of cases) {
+    let thrown: unknown;
+    try {
+      proof.parseMarkdown(markdown);
+    } catch (error) {
+      thrown = error;
+    }
+    assert(thrown instanceof Error, `unsupported directive ${JSON.stringify(markdown)} did not fail`);
+    assert(
+      thrown instanceof Error && thrown.message === message,
+      `unsupported directive error = ${(thrown as Error).message}`,
+    );
+  }
+});
+
 await test('headless Proof rejects a content rule naming an unknown node type', async () => {
   let thrown: unknown;
   try {

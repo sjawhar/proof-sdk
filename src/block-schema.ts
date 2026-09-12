@@ -26,11 +26,15 @@ export interface BlockSchema {
 
 export type HostBlockRenderer = (node: ProseMirrorNode) => DOMOutputSpec;
 
-type DirectiveNode = {
-  type: 'containerDirective' | 'leafDirective' | 'textDirective';
+type MarkdownNode = {
+  type: string;
   name?: string;
   attributes?: Record<string, string>;
-  children?: DirectiveNode[];
+  children?: MarkdownNode[];
+  position?: {
+    start?: { line?: number; offset?: number };
+    end?: { offset?: number };
+  };
 };
 
 function directiveName(name: string): boolean {
@@ -147,9 +151,9 @@ export function blockSchemaPlugins(schema: BlockSchema, renderBlock?: HostBlockR
         0,
       ],
       parseMarkdown: {
-        match: (node) => (node as DirectiveNode).type === 'containerDirective' && (node as DirectiveNode).name === type.name,
+        match: (node) => (node as MarkdownNode).type === 'containerDirective' && (node as MarkdownNode).name === type.name,
         runner: (state, node, nodeType) => {
-          const directive = node as DirectiveNode;
+          const directive = node as MarkdownNode;
           state.openNode(nodeType, directiveAttrs(type, directive.attributes));
           state.next(directive.children);
           state.closeNode();
@@ -171,9 +175,7 @@ export function blockSchemaPlugins(schema: BlockSchema, renderBlock?: HostBlockR
   }));
 }
 
-function visit(node: DirectiveNode, schema: BlockSchema): void {
-  if (node.type === 'leafDirective') throw new Error('leaf directives (::name) are not supported');
-  if (node.type === 'textDirective') throw new Error('text directives (:name{...}) are not supported');
+function visit(node: MarkdownNode, schema: BlockSchema): void {
   if (node.type === 'containerDirective') {
     const name = node.name ?? '';
     const type = schema.types.find((candidate) => candidate.name === name);
@@ -183,20 +185,31 @@ function visit(node: DirectiveNode, schema: BlockSchema): void {
   for (const child of node.children ?? []) visit(child, schema);
 }
 
-export function remarkTypedBlocks(schema: BlockSchema) {
-  validateBlockSchema(schema);
-  return (tree: { children?: DirectiveNode[] }) => {
-    for (const child of tree.children ?? []) visit(child, schema);
-  };
-}
-
-export function rejectUnsupportedDirectiveSyntax(markdown: string): void {
-  for (const [index, line] of markdown.split('\n').entries()) {
-    const trimmed = line.trimStart();
-    if (trimmed.startsWith(':::') && trimmed !== ':::') {
-      if (!/^:::[A-Za-z0-9_-]+\{.*\}$/.test(trimmed)) {
-        throw new Error(`line ${index + 1}: typed block directives use :::name{...}; Pandoc fenced divs and malformed directives are not supported`);
+export function rejectUnsupportedDirectiveSyntax(tree: MarkdownNode, markdown: string): void {
+  const reject = (node: MarkdownNode): void => {
+    if (node.type === 'leafDirective') throw new Error('leaf directives (::name) are not supported');
+    if (node.type === 'textDirective') throw new Error('text directives (:name{...}) are not supported');
+    if (node.type === 'paragraph') {
+      const start = node.position?.start;
+      const end = node.position?.end;
+      if (start?.offset !== undefined && end?.offset !== undefined) {
+        for (const [index, line] of markdown.slice(start.offset, end.offset).split('\n').entries()) {
+          const trimmed = line.trimStart();
+          if (trimmed.startsWith(':::') && trimmed !== ':::' && !/^:::[A-Za-z0-9_-]+\{.*\}$/.test(trimmed)) {
+            throw new Error(`line ${(start.line ?? 1) + index}: typed block directives use :::name{...}; Pandoc fenced divs and malformed directives are not supported`);
+          }
+        }
       }
     }
-  }
+    for (const child of node.children ?? []) reject(child);
+  };
+  reject(tree);
+}
+
+export function remarkTypedBlocks(schema: BlockSchema) {
+  validateBlockSchema(schema);
+  return (tree: MarkdownNode, file: { toString(): string }) => {
+    rejectUnsupportedDirectiveSyntax(tree, file.toString());
+    for (const child of tree.children ?? []) visit(child, schema);
+  };
 }

@@ -18,7 +18,6 @@ import { schema as commonmarkSchema } from '@milkdown/preset-commonmark';
 import { type BlockIdGenerator, blockIdSchemas, mintBlockId, withBlockIds } from './editor/schema/block-ids';
 import {
   blockSchemaPlugins,
-  rejectUnsupportedDirectiveSyntax,
   remarkTypedBlocks,
   type BlockSchema,
 } from './block-schema.js';
@@ -118,10 +117,7 @@ export async function createHeadlessProof(options: HeadlessProofOptions = {}): P
     markdown: string,
   ) => ProseMirrorNode;
   const mint = options.blockId ?? mintBlockId;
-  const parseMarkdown = (markdown: string): ProseMirrorNode => {
-    if (options.blockSchema) rejectUnsupportedDirectiveSyntax(markdown);
-    return withBlockIds(parse(markdown), mint);
-  };
+  const parseMarkdown = (markdown: string): ProseMirrorNode => withBlockIds(parse(markdown), mint);
 
   const serializeProcessor = unified()
     .use(remarkGfm)
