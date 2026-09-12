@@ -1,6 +1,6 @@
 {
   "name": "@sjawhar/proof-editor",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Open-source collaborative markdown editor with provenance tracking and an agent HTTP bridge",
   "license": "MIT",
   "repository": {

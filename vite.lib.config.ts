@@ -44,7 +44,8 @@ export default defineConfig({
         id === 'remark-parse' ||
         id === 'remark-stringify' ||
         id === 'remark-gfm' ||
-        id === 'remark-frontmatter',
+        id === 'remark-frontmatter' ||
+        id === 'remark-directive',
     },
   },
 });
