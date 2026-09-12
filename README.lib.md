@@ -99,6 +99,46 @@ export function createHeadlessProof(): Promise<HeadlessProofEditor>;
 
 The headless entry point does not construct a browser editor or require a Yjs document.
 
+## Typed blocks
+
+Pass the document service's block schema to both `createProofEditor` and
+`createHeadlessProof`. Each schema type becomes a ProseMirror block node and uses
+remark-directive container syntax in Markdown. Attribute values declared
+`server: true` are parsed and serialized unchanged; the editor exposes no
+attribute controls for them, and `setBlockAttributes` rejects them. A host
+renderer receives the typed node and schema definition and should render those
+values read-only.
+
+`ProofEditorHandle` extends `TypedBlockCommands`:
+
+```ts
+export type TypedBlockAttributeValue = string | boolean | readonly string[];
+export type TypedBlockAttributes = Readonly<Record<string, TypedBlockAttributeValue>>;
+
+export interface TypedBlockCommands {
+  insertTypedBlock(typeName: string, attrs?: TypedBlockAttributes): boolean;
+  retypeBlock(blockId: string, typeName: string, attrs?: TypedBlockAttributes): boolean;
+  setBlockAttributes(blockId: string, attrs: TypedBlockAttributes): boolean;
+  blockMenuItems(): readonly TypedBlockMenuItem[];
+}
+```
+
+`insertTypedBlock` creates the named typed block with an empty paragraph body
+and schema defaults at the current selection. `retypeBlock` preserves the
+target block's `blockId` and makes its existing block content the typed body's
+first child. Undo restores the original plain block and id. `setBlockAttributes`
+is for host-driven changes to client-owned attributes such as `urgency` and
+`multiple`.
+
+`blockMenuItems()` returns one `Insert <Name>` item per declared type. When the
+selection is in a paragraph that type can contain, it also returns `Turn into
+<Name>`; hosts render these items in their own block menu. It returns no items
+when no `blockSchema` was supplied.
+
+The browser entry exports `createTypedBlockCommands` for hosts that wrap their
+own editor state. The headless entry re-exports the block-schema types so a
+server and browser can share one schema definition.
+
 ## Attribution
 
 Built on [Every](https://every.to)'s [Proof SDK](https://github.com/everyinc/proof-sdk), MIT

@@ -23,6 +23,7 @@
 
 import { BLOCK_ID_DOM_ATTR, blockIdOf, blockIdPlugins } from './editor/schema/block-ids';
 import { blockSchemaPlugins, type BlockSchema, type HostBlockRenderer } from './block-schema';
+import { createTypedBlockCommands, type TypedBlockCommands } from './typed-block-commands';
 import {
   Editor,
   rootCtx,
@@ -98,6 +99,14 @@ export type {
 } from './block-schema';
 export type { StoredMark } from './editor/plugins/marks';
 export { BLOCK_ID_ATTR, BLOCK_ID_DOM_ATTR, blockIdOf, isIdentifiedBlock, setBlockIdGenerator } from './editor/schema/block-ids';
+export { createTypedBlockCommands } from './typed-block-commands';
+export type {
+  TypedBlockAttributeValue,
+  TypedBlockAttributes,
+  TypedBlockCommandContext,
+  TypedBlockCommands,
+  TypedBlockMenuItem,
+} from './typed-block-commands';
 
 export interface ProofEditorUser {
   name: string;
@@ -136,7 +145,7 @@ export interface CreateProofEditorOptions {
   renderBlock?: HostBlockRenderer;
 }
 
-export interface ProofEditorHandle {
+export interface ProofEditorHandle extends TypedBlockCommands {
   view: EditorView;
   /** Serialize the current document to markdown via the configured serializer. */
   getMarkdown(): string;
@@ -345,8 +354,17 @@ export async function createProofEditor(
     ? () => {}
     : registerPopoverHookInstance(view, opts.onMarkAction);
 
+  const typedBlockCommands = createTypedBlockCommands({
+    blockSchema: opts.blockSchema,
+    getState: () => view.state,
+    dispatch: (transaction) => {
+      view.dispatch(transaction);
+    },
+  });
+
   return {
     view,
+    ...typedBlockCommands,
     getMarkdown(): string {
       const serializer = editor.ctx.get(serializerCtx);
       return serializer(view.state.doc);

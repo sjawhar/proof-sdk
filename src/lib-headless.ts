@@ -142,5 +142,11 @@ export async function createHeadlessProof(options: HeadlessProofOptions = {}): P
 
 export { BLOCK_ID_ATTR, blockIdOf, isIdentifiedBlock, withBlockIds } from './editor/schema/block-ids';
 export type { BlockIdGenerator } from './editor/schema/block-ids';
+export type {
+  BlockAttributeKind,
+  BlockAttributeSchema,
+  BlockSchema,
+  BlockTypeSchema,
+} from './block-schema.js';
 
 export default createHeadlessProof;

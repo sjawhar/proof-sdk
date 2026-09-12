@@ -8,7 +8,7 @@ export type BlockAttributeKind = 'string' | 'bool' | 'enum' | 'string[]' | 'acto
 export interface BlockAttributeSchema {
   kind: BlockAttributeKind;
   choices?: readonly string[];
-  default: string | boolean | readonly string[];
+  default?: string | boolean | readonly string[];
   server?: boolean;
 }
 
@@ -24,7 +24,7 @@ export interface BlockSchema {
   types: readonly BlockTypeSchema[];
 }
 
-export type HostBlockRenderer = (node: ProseMirrorNode) => DOMOutputSpec;
+export type HostBlockRenderer = (node: ProseMirrorNode, type: BlockTypeSchema) => DOMOutputSpec;
 
 type MarkdownNode = {
   type: string;
@@ -97,15 +97,15 @@ function parseAttribute(typeName: string, name: string, attribute: BlockAttribut
   }
 }
 
-function schemaAttrs(type: BlockTypeSchema): Record<string, { default: string | boolean | readonly string[] }> {
+function schemaAttrs(type: BlockTypeSchema): Record<string, { default?: string | boolean | readonly string[] }> {
   return Object.fromEntries(Object.entries(type.attributes).map(([name, attribute]) => [name, { default: attribute.default }]));
 }
 
-function directiveAttrs(type: BlockTypeSchema, attrs: Record<string, string> | undefined): Record<string, string | boolean | string[]> {
-  const parsed: Record<string, string | boolean | string[]> = {};
+function directiveAttrs(type: BlockTypeSchema, attrs: Record<string, string> | undefined): Record<string, string | boolean | string[] | undefined> {
+  const parsed: Record<string, string | boolean | string[] | undefined> = {};
   for (const [name, attribute] of Object.entries(type.attributes)) {
     const value = attrs?.[name];
-    parsed[name] = value === undefined || attribute.server ? attribute.default : parseAttribute(type.name, name, attribute, value);
+    parsed[name] = value === undefined ? attribute.default : parseAttribute(type.name, name, attribute, value);
   }
   for (const name of Object.keys(attrs ?? {})) {
     if (name !== 'id' && name !== 'className' && !(name in type.attributes)) {
@@ -126,7 +126,7 @@ function markdownAttrs(type: BlockTypeSchema, node: ProseMirrorNode): Record<str
   attributes.id = blockId;
   for (const [name, definition] of Object.entries(type.attributes)) {
     const value = node.attrs[name];
-    if (value === undefined) throw new Error(`typed block ${JSON.stringify(type.name)} is missing attribute ${JSON.stringify(name)}`);
+    if (value === undefined) continue;
     attributes[name] = definition.kind === 'bool' ? String(value) : definition.kind === 'string[]' ? JSON.stringify(value) : String(value);
   }
   return attributes;
@@ -142,7 +142,7 @@ export function blockSchemaPlugins(schema: BlockSchema, renderBlock?: HostBlockR
       defining: true,
       isolating: true,
       parseDOM: [{ tag: `section[data-proof-block-type="${type.name}"]` }],
-      toDOM: (node) => renderBlock?.(node) ?? [
+      toDOM: (node) => renderBlock?.(node, type) ?? [
         'section',
         {
           class: `proof-typed-block proof-typed-block-${type.name}`,

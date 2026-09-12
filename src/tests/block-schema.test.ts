@@ -58,6 +58,75 @@ await test('headless Proof registers a typed block and round-trips its remark-di
   assert(callout.attrs.title === 'Read this', `callout title = ${callout.attrs.title}`);
   assert(proof.serializeMarkdown(doc) === markdown, 'typed block markdown did not round-trip');
 });
+
+const serverOwnedSchema = {
+  version: 1,
+  types: [
+    {
+      name: 'ask',
+      content: 'paragraph+',
+      render: 'host',
+      attributes: {
+        state: { kind: 'enum', choices: ['open', 'answered', 'resolved'], default: 'open', server: true },
+        answered_by: { kind: 'actor', server: true },
+        answered_at: { kind: 'timestamp', server: true },
+        selected: { kind: 'string[]', server: true },
+        answer: { kind: 'string', server: true },
+      },
+    },
+  ],
+} as const;
+
+await test('headless Proof preserves explicitly supplied server-owned attributes', async () => {
+  const proof = await createHeadlessProof({ blockSchema: serverOwnedSchema });
+  const markdown = [
+    ':::ask{#ask-1 state="answered" answered_by="actor-1" answered_at="2026-09-12T13:00:00Z" selected="[]" answer="Ship it"}',
+    'Which option?',
+    ':::',
+    '',
+  ].join('\n');
+  const doc = proof.parseMarkdown(markdown);
+  const ask = doc.child(0);
+  assert(ask.attrs.state === 'answered', `ask state = ${ask.attrs.state}`);
+  assert(ask.attrs.answered_by === 'actor-1', `answered_by = ${ask.attrs.answered_by}`);
+  assert(ask.attrs.answered_at === '2026-09-12T13:00:00Z', `answered_at = ${ask.attrs.answered_at}`);
+  assert(JSON.stringify(ask.attrs.selected) === '[]', `selected = ${JSON.stringify(ask.attrs.selected)}`);
+  assert(ask.attrs.answer === 'Ship it', `answer = ${ask.attrs.answer}`);
+  assert(proof.serializeMarkdown(doc) === markdown, 'server-owned attributes did not round-trip');
+});
+
+await test('headless Proof round-trips non-empty server-owned string arrays', async () => {
+  const proof = await createHeadlessProof({ blockSchema: serverOwnedSchema });
+  const paragraph = proof.schema.nodes.paragraph.create(null, proof.schema.text('Which option?'));
+  const ask = proof.schema.nodes.ask.create({
+    blockId: 'ask-1',
+    state: 'answered',
+    answered_by: 'actor-1',
+    answered_at: '2026-09-12T13:00:00Z',
+    selected: ['Ship'],
+    answer: 'Ship it',
+  }, paragraph);
+  const markdown = proof.serializeMarkdown(proof.schema.nodes.doc.create(null, ask));
+  const parsed = proof.parseMarkdown(markdown).child(0);
+  assert(JSON.stringify(parsed.attrs.selected) === '["Ship"]', `selected = ${JSON.stringify(parsed.attrs.selected)}`);
+  assert(proof.serializeMarkdown(proof.parseMarkdown(markdown)) === markdown, 'server string array did not round-trip');
+});
+
+await test('headless Proof omits unset server-owned attributes that have no schema default', async () => {
+  const proof = await createHeadlessProof({ blockSchema: serverOwnedSchema });
+  const markdown = [
+    ':::ask{#ask-1 state="open"}',
+    'Which option?',
+    ':::',
+    '',
+  ].join('\n');
+  const ask = proof.parseMarkdown(markdown).child(0);
+  assert(ask.attrs.answered_by === undefined, `answered_by = ${ask.attrs.answered_by}`);
+  assert(ask.attrs.answered_at === undefined, `answered_at = ${ask.attrs.answered_at}`);
+  assert(ask.attrs.selected === undefined, `selected = ${JSON.stringify(ask.attrs.selected)}`);
+  assert(ask.attrs.answer === undefined, `answer = ${ask.attrs.answer}`);
+  assert(proof.serializeMarkdown(proof.parseMarkdown(markdown)) === markdown, 'unset server attrs did not round-trip');
+});
 await test('headless Proof round-trips a typed block with arbitrary block children', async () => {
   let id = 0;
   const proof = await createHeadlessProof({ blockId: () => `b-${++id}`, blockSchema });
