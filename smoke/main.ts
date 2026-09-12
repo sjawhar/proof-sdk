@@ -8,6 +8,7 @@
  * document-mutation surface the contract exposes), never through any
  * removed spike-only handle method.
  */
+import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { TextSelection } from '@milkdown/kit/prose/state';
@@ -153,6 +154,20 @@ async function main(): Promise<void> {
   // --- 1. content is typed into A by Playwright ---
   await sleep(400);
   record('type in A appears in B', handleB.view.state.doc.textContent.includes('Hello world'));
+
+  // --- 1b. every block A created carries a blockId, and B sees the same ids (never its own) ---
+  const blockIdsOf = (doc: ProseMirrorNode): (string | null)[] => {
+    const ids: (string | null)[] = [];
+    doc.descendants((node) => {
+      if (node.isBlock && node.type.name !== 'doc') ids.push((node.attrs.blockId as string | null) ?? null);
+    });
+    return ids;
+  };
+  const idsA = blockIdsOf(handleA.view.state.doc);
+  const idsB = blockIdsOf(handleB.view.state.doc);
+  record('every block in A has a blockId', idsA.length > 0 && idsA.every((id) => typeof id === 'string' && id.length > 0), JSON.stringify(idsA));
+  record('B carries the same block ids as A', JSON.stringify(idsA) === JSON.stringify(idsB), `A=${JSON.stringify(idsA)} B=${JSON.stringify(idsB)}`);
+  record('A DOM renders data-block-id for its first block', !!idsA[0] && !!rootA.querySelector(`[data-block-id="${idsA[0]}"]`));
 
   // --- 2. select "bold text" in A, Ask button should appear, click it ---
   const askRange = findTextRange(handleA.view, 'bold text');

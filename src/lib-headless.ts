@@ -15,6 +15,7 @@
 
 import { Editor, editorViewCtx, marksCtx, nodesCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
 import { schema as commonmarkSchema } from '@milkdown/preset-commonmark';
+import { type BlockIdGenerator, blockIdSchemas, mintBlockId, withBlockIds } from './editor/schema/block-ids';
 import { configureDispatchLinks } from './dispatch-links.js';
 import { schema as gfmSchema } from '@milkdown/preset-gfm';
 import { Schema, type Node as ProseMirrorNode } from '@milkdown/prose/model';
@@ -34,11 +35,18 @@ import { remarkSoftBreakAsSpace } from './dispatch-soft-breaks.js';
 
 export interface HeadlessProofEditor {
   schema: Schema;
+  /** Parses markdown into a document whose every block carries a `blockId`. */
   parseMarkdown(markdown: string): ProseMirrorNode;
   serializeMarkdown(doc: ProseMirrorNode): string;
 }
 
-export async function createHeadlessProof(): Promise<HeadlessProofEditor> {
+export interface HeadlessProofOptions {
+  /** Mints block ids for parsed documents; defaults to random uuids. Fixture
+   *  generators and tests pass a deterministic one. */
+  blockId?: BlockIdGenerator;
+}
+
+export async function createHeadlessProof(options: HeadlessProofOptions = {}): Promise<HeadlessProofEditor> {
   const editor = Editor.make();
   const ctx = editor.ctx;
 
@@ -66,6 +74,7 @@ export async function createHeadlessProof(): Promise<HeadlessProofEditor> {
     // Frontmatter must be registered after commonmark so `---` parses as YAML.
     ...frontmatterSchema,
     ...codeBlockExtPlugins,
+    ...blockIdSchemas,
     // Some schema nodes reference proof marks (e.g. code_block allows them).
     ...proofMarkPlugins,
     ...dispatchMarkPlugins,
@@ -93,9 +102,11 @@ export async function createHeadlessProof(): Promise<HeadlessProofEditor> {
     .use(remarkProofMarks)
     .use(remarkDispatchMarks)
     .use(remarkSoftBreakAsSpace);
-  const parseMarkdown = ParserState.create(schema as never, parseProcessor as never) as unknown as (
+  const parse = ParserState.create(schema as never, parseProcessor as never) as unknown as (
     markdown: string,
   ) => ProseMirrorNode;
+  const mint = options.blockId ?? mintBlockId;
+  const parseMarkdown = (markdown: string): ProseMirrorNode => withBlockIds(parse(markdown), mint);
 
   const serializeProcessor = unified()
     .use(remarkGfm)
@@ -116,5 +127,8 @@ export async function createHeadlessProof(): Promise<HeadlessProofEditor> {
 
   return { schema, parseMarkdown, serializeMarkdown };
 }
+
+export { BLOCK_ID_ATTR, blockIdOf, isIdentifiedBlock, withBlockIds } from './editor/schema/block-ids';
+export type { BlockIdGenerator } from './editor/schema/block-ids';
 
 export default createHeadlessProof;

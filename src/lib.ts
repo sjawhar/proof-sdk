@@ -21,6 +21,7 @@
  * any app-shell singleton.
  */
 
+import { BLOCK_ID_DOM_ATTR, blockIdOf, blockIdPlugins } from './editor/schema/block-ids';
 import {
   Editor,
   rootCtx,
@@ -87,6 +88,7 @@ import { configureDispatchLinks } from './dispatch-links';
 
 export type { MarkAction, SelectionBarActionKind, PopoverActionKind } from './dispatch-marks';
 export type { StoredMark } from './editor/plugins/marks';
+export { BLOCK_ID_ATTR, BLOCK_ID_DOM_ATTR, blockIdOf, isIdentifiedBlock, setBlockIdGenerator } from './editor/schema/block-ids';
 
 export interface ProofEditorUser {
   name: string;
@@ -142,6 +144,10 @@ export interface ProofEditorHandle {
   /** Scrolls a mark's anchor into view and pulses it. Works for both the
    *  unified marks system and dispatchAsk marks: both render `data-id`. */
   focusMark(markId: string): void;
+  /** Scrolls a block into view by its stable `blockId` and pulses it. */
+  focusBlock(blockId: string): void;
+  /** The stable id of the block containing the selection head, if any. */
+  blockIdAtSelection(): string | null;
   /** Tear down the editor and any collab bindings. */
   destroy(): void;
 }
@@ -229,6 +235,8 @@ export async function createProofEditor(
     .use(libraryRemarkFrontmatterPlugin)
     .use(frontmatterSchema)
     .use(codeBlockExtPlugins)
+    // Every block carries a stable blockId (see ./editor/schema/block-ids.ts).
+    .use(blockIdPlugins)
     .use(history)
     .use(listener)
     .use(collab)
@@ -367,6 +375,22 @@ export async function createProofEditor(
         element.classList.add(PULSE_CLASS);
         window.setTimeout(() => element.classList.remove(PULSE_CLASS), PULSE_DURATION_MS);
       }
+    },
+    focusBlock(blockId: string): void {
+      const escaped = cssEscapeAttrValue(blockId);
+      const element = view.dom.querySelector<HTMLElement>(`[${BLOCK_ID_DOM_ATTR}="${escaped}"]`);
+      if (element === null) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add(PULSE_CLASS);
+      window.setTimeout(() => element.classList.remove(PULSE_CLASS), PULSE_DURATION_MS);
+    },
+    blockIdAtSelection(): string | null {
+      const $head = view.state.selection.$head;
+      for (let depth = $head.depth; depth > 0; depth -= 1) {
+        const id = blockIdOf($head.node(depth));
+        if (id !== null) return id;
+      }
+      return null;
     },
     destroy(): void {
       alive = false;

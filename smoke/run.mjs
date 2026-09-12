@@ -42,11 +42,16 @@ await page.waitForFunction(() => /DONE|FATAL/.test(document.getElementById('stat
 const results = await page.evaluate(() => window.__smokeResults ?? {});
 const fatal = await page.evaluate(() => window.__smokeFatal);
 let remoteInputPass = false;
+let bobPage;
 try {
   const alice = await browser.newContext();
   const bob = await browser.newContext();
   const alicePage = await alice.newPage();
-  const bobPage = await bob.newPage();
+  bobPage = await bob.newPage();
+  for (const [name, p] of [['alice', alicePage], ['bob', bobPage]]) {
+    p.on('console', (message) => { if (message.type() === 'error' || message.type() === 'warning') console.log(`[${name}] ${message.text()}`); });
+    p.on('pageerror', (error) => console.log(`[${name}] pageerror ${error.message}`));
+  }
   await alicePage.goto('http://127.0.0.1:4173/?two-context');
   await alicePage.waitForFunction(() => window.__twoContextEditor !== undefined);
   const initial = await alicePage.evaluate(() => {
@@ -92,6 +97,16 @@ try {
   remoteInputPass = true;
 } catch (error) {
   console.error(`two-context remote input: ${error instanceof Error ? error.message : String(error)}`);
+  try {
+    const bobState = await bobPage.evaluate(() => ({
+      text: window.__twoContextEditor.handle.view.state.doc.textContent,
+      json: JSON.stringify(window.__twoContextEditor.handle.view.state.doc.toJSON()).slice(0, 1500),
+      dom: document.querySelector('#editor-a .ProseMirror')?.innerHTML.slice(0, 800),
+    }));
+    console.error(`two-context bob state: ${JSON.stringify(bobState)}`);
+  } catch (inner) {
+    console.error(`two-context bob state unavailable: ${inner instanceof Error ? inner.message : String(inner)}`);
+  }
 }
 results['typing after a remote edit reaches a separate browser context'] = remoteInputPass;
 await browser.close();
