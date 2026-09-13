@@ -150,6 +150,7 @@ function installActionBarDom(coarse: boolean) {
   const previousClearTimeout = globalThis.clearTimeout;
   const document = new FakeDocument();
   const timers = new Map<number, () => void>();
+  let lastTimer: (() => void) | null = null;
   let nextTimer = 1;
 
   const windowLike = {
@@ -163,6 +164,7 @@ function installActionBarDom(coarse: boolean) {
   (globalThis as { document: unknown }).document = document;
   globalThis.setTimeout = ((callback: TimerHandler) => {
     if (typeof callback !== 'function') throw new Error('Expected a function timer callback');
+    lastTimer = callback;
     const timer = nextTimer++;
     timers.set(timer, callback);
     return timer;
@@ -185,6 +187,9 @@ function installActionBarDom(coarse: boolean) {
       const pending = [...timers.values()];
       timers.clear();
       for (const timer of pending) timer();
+    },
+    runLastTimer: () => {
+      lastTimer?.();
     },
     restore: () => {
       globalThis.setTimeout = previousSetTimeout;
@@ -388,12 +393,14 @@ await test('fine-pointer selectionchange leaves two action bars to their editor 
 
 
 await test('hides the selection bar when focus leaves the editor', async () => {
-  const fixture = installActionBarDom(false);
+  const fixture = installActionBarDom(true);
   try {
     const controller = await createActionBarController(fixture.view);
     controller.update(fixture.view);
+    fixture.runTimers();
     const bar = fixture.actionBar();
     assert(bar !== undefined, 'Expected action bar element to be attached');
+    assert(bar.style.display === 'flex', 'Expected the settled touch selection bar to be visible');
 
     const editorDom = fixture.view.dom as unknown as FakeElement;
     editorDom.dispatch('focusout', { relatedTarget: fixture.document.body } as FocusEvent);
@@ -403,5 +410,60 @@ await test('hides the selection bar when focus leaves the editor', async () => {
     fixture.restore();
   }
 });
+await test('fine-pointer focus loss leaves the action bar visible until its editor update', async () => {
+  const fixture = installActionBarDom(false);
+  try {
+    const controller = await createActionBarController(fixture.view);
+    controller.update(fixture.view);
+    const bar = fixture.actionBar();
+    assert(bar !== undefined, 'Expected action bar element to be attached');
+
+    const editorDom = fixture.view.dom as unknown as FakeElement;
+    editorDom.dispatch('focusout', { relatedTarget: fixture.document.body } as FocusEvent);
+    assert(bar.style.display === 'flex', 'Expected fine-pointer focus loss to leave the action bar unchanged');
+    controller.destroy();
+  } finally {
+    fixture.restore();
+  }
+});
+
+await test('a mouse selection overrides a coarse-pointer media query', async () => {
+  const fixture = installActionBarDom(true);
+  try {
+    const controller = await createActionBarController(fixture.view);
+    controller.update(fixture.view);
+    const bar = fixture.actionBar();
+    assert(bar !== undefined, 'Expected action bar element to be attached');
+
+    const editorDom = fixture.view.dom as unknown as FakeElement;
+    editorDom.dispatch('pointerdown', { pointerType: 'mouse' } as PointerEvent);
+    fixture.document.dispatch('pointerup');
+    controller.update(fixture.view);
+
+    assert(bar.style.display === 'flex', 'Expected a known mouse selection bar to appear immediately');
+    assert(bar.dataset.touch === undefined, 'Expected a known mouse selection to clear data-touch');
+    assert(Number.parseFloat(bar.style.top) + 40 <= 200, 'Expected a known mouse selection bar above the text');
+    controller.destroy();
+  } finally {
+    fixture.restore();
+  }
+});
+
+await test('a cancelled touch debounce cannot show a destroyed action bar', async () => {
+  const fixture = installActionBarDom(true);
+  try {
+    const controller = await createActionBarController(fixture.view);
+    controller.update(fixture.view);
+    const bar = fixture.actionBar();
+    assert(bar !== undefined, 'Expected action bar element to be attached');
+
+    controller.destroy();
+    fixture.runLastTimer();
+    assert(bar.style.display === 'none', 'Expected a destroyed action bar to remain hidden');
+  } finally {
+    fixture.restore();
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

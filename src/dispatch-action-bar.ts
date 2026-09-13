@@ -108,6 +108,7 @@ class ActionBarController {
   private lastPointerType: string | null = null;
   private pointerDown = false;
   private editorLostFocus = false;
+  private destroyed = false;
   private selectionChangedAt: number | null = null;
   private selectionSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -149,10 +150,11 @@ class ActionBarController {
   };
 
   private readonly handleEditorFocusIn = () => {
-    this.editorLostFocus = false;
+    if (this.isTouchSelection()) this.editorLostFocus = false;
   };
 
   private readonly handleEditorFocusOut = (event: FocusEvent) => {
+    if (!this.isTouchSelection()) return;
     const nextTarget = event.relatedTarget;
     if (nextTarget && this.bar.contains(nextTarget as Node)) return;
     this.editorLostFocus = true;
@@ -191,6 +193,7 @@ class ActionBarController {
   }
 
   destroy(): void {
+    this.destroyed = true;
     document.removeEventListener('selectionchange', this.handleSelectionChange);
     document.removeEventListener('pointerup', this.handlePointerUp);
     document.removeEventListener('touchend', this.handlePointerUp);
@@ -230,6 +233,7 @@ class ActionBarController {
 
   private isTouchSelection(): boolean {
     if (this.lastPointerType === 'touch') return true;
+    if (this.lastPointerType === 'mouse' || this.lastPointerType === 'pen') return false;
     try {
       return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
     } catch {
@@ -243,6 +247,7 @@ class ActionBarController {
 
     const elapsed = this.selectionChangedAt === null ? 0 : Date.now() - this.selectionChangedAt;
     this.selectionSettleTimer = setTimeout(() => {
+      if (this.destroyed) return;
       this.selectionSettleTimer = null;
       if (
         this.pointerDown ||
