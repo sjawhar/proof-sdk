@@ -113,6 +113,11 @@ class ActionBarController {
 
   private readonly handleSelectionChange = () => {
     const range = getSelectionRange(this.view);
+    if (!this.isTouchSelection()) {
+      if (range) this.lastRange = range;
+      return;
+    }
+
     if (!range) {
       this.lastRange = null;
       this.hideBar();
@@ -120,7 +125,6 @@ class ActionBarController {
     }
 
     this.lastRange = range;
-    if (!this.isTouchSelection()) return;
     this.selectionChangedAt = Date.now();
     this.hideBar();
     this.scheduleTouchBar();

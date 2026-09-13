@@ -47,18 +47,25 @@ class FakeElement {
   readonly children: FakeElement[] = [];
   readonly dataset: Record<string, string> = {};
   readonly style = {} as CSSStyleDeclaration;
-  private readonly listeners = new Map<string, Listener>();
+  private readonly listeners = new Map<string, Listener[]>();
 
   addEventListener(type: string, listener: Listener): void {
-    this.listeners.set(type, listener);
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
   }
 
-  removeEventListener(type: string): void {
-    this.listeners.delete(type);
+  removeEventListener(type: string, listener: Listener): void {
+    const listeners = this.listeners.get(type);
+    if (listeners === undefined) return;
+    this.listeners.set(
+      type,
+      listeners.filter((candidate) => candidate !== listener),
+    );
   }
 
   dispatch(type: string, event = {} as Event): void {
-    this.listeners.get(type)?.(event);
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
   appendChild<T extends FakeElement>(child: T): T {
@@ -86,23 +93,54 @@ class FakeElement {
 class FakeDocument {
   readonly body = new FakeElement();
   activeElement: FakeElement | null = null;
-  private readonly listeners = new Map<string, Listener>();
+  private readonly listeners = new Map<string, Listener[]>();
 
   createElement(): FakeElement {
     return new FakeElement();
   }
 
   addEventListener(type: string, listener: Listener): void {
-    this.listeners.set(type, listener);
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
   }
 
-  removeEventListener(type: string): void {
-    this.listeners.delete(type);
+  removeEventListener(type: string, listener: Listener): void {
+    const listeners = this.listeners.get(type);
+    if (listeners === undefined) return;
+    this.listeners.set(
+      type,
+      listeners.filter((candidate) => candidate !== listener),
+    );
   }
 
   dispatch(type: string): void {
-    this.listeners.get(type)?.({} as Event);
+    for (const listener of this.listeners.get(type) ?? []) listener({} as Event);
   }
+}
+
+function createActionBarView(document: FakeDocument) {
+  const dom = new FakeElement();
+  document.body.appendChild(dom);
+  const selection: Box = { top: 200, bottom: 220, left: 379, right: 600 };
+  const state = {
+    selection: { from: 1, to: 2 },
+    doc: { content: { size: 3 } },
+  };
+  const view = {
+    dom,
+    state,
+    coordsAtPos: () => selection,
+    hasFocus: () => true,
+  } as unknown as EditorView;
+
+  return {
+    dom,
+    view,
+    setSelection: (from: number, to: number) => {
+      state.selection = { from, to };
+    },
+  };
 }
 
 function installActionBarDom(coarse: boolean) {
@@ -133,28 +171,16 @@ function installActionBarDom(coarse: boolean) {
     timers.delete(timer);
   }) as unknown as typeof clearTimeout;
 
-  const dom = new FakeElement();
-  document.body.appendChild(dom);
-  document.activeElement = dom;
-  const selection: Box = { top: 200, bottom: 220, left: 379, right: 600 };
-  const view = {
-    dom,
-    state: {
-      selection: { from: 1, to: 2 },
-      doc: { content: { size: 3 } },
-    },
-    coordsAtPos: () => selection,
-    hasFocus: () => true,
-  } as unknown as EditorView;
+  const primary = createActionBarView(document);
+  document.activeElement = primary.dom;
 
   return {
     document,
-    view,
+    view: primary.view,
     actionBar: () => document.body.children.find((child) => child.className === 'dispatch-action-bar'),
-    setSelection: (from: number, to: number) => {
-      const state = view.state as unknown as { selection: { from: number; to: number } };
-      state.selection = { from, to };
-    },
+    actionBars: () => document.body.children.filter((child) => child.className === 'dispatch-action-bar'),
+    setSelection: primary.setSelection,
+    createView: () => createActionBarView(document),
     runTimers: () => {
       const pending = [...timers.values()];
       timers.clear();
@@ -333,6 +359,33 @@ await test('fine-pointer selections still appear immediately above their selecti
     fixture.restore();
   }
 });
+await test('fine-pointer selectionchange leaves two action bars to their editor transactions', async () => {
+  const fixture = installActionBarDom(false);
+  try {
+    const firstController = await createActionBarController(fixture.view);
+    firstController.update(fixture.view);
+    const peer = fixture.createView();
+    const secondController = await createActionBarController(peer.view);
+    secondController.update(peer.view);
+    const [firstBar, secondBar] = fixture.actionBars();
+    assert(firstBar !== undefined && secondBar !== undefined, 'Expected both editor views to have action bars');
+    const firstTop = firstBar.style.top;
+    const secondTop = secondBar.style.top;
+
+    fixture.setSelection(1, 1);
+    fixture.document.dispatch('selectionchange');
+
+    assert(firstBar.style.display === 'flex', 'Expected the first fine-pointer bar to remain unchanged');
+    assert(secondBar.style.display === 'flex', 'Expected the peer fine-pointer bar to remain unchanged');
+    assert(firstBar.style.top === firstTop, 'Expected the first fine-pointer bar position to remain unchanged');
+    assert(secondBar.style.top === secondTop, 'Expected the peer fine-pointer bar position to remain unchanged');
+    firstController.destroy();
+    secondController.destroy();
+  } finally {
+    fixture.restore();
+  }
+});
+
 
 await test('hides the selection bar when focus leaves the editor', async () => {
   const fixture = installActionBarDom(false);
