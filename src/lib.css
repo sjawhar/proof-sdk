@@ -874,6 +874,21 @@
   font-size: 12px;
 }
 
+.dispatch-action-bar[data-touch="true"] {
+  left: 50%;
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+}
+
+.dispatch-action-bar[data-touch="true"] button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
 .dispatch-action-bar button {
   border: none;
   background: transparent;

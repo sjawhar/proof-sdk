@@ -81,6 +81,8 @@ The selection-bar actions (`comment` | `ask` | `suggest`) apply a local mark bef
 `reply` (with its text), `resolve`, `unresolve`, `accept`, `reject`, and `delete` report through
 the hook when it is present; without a hook, they use the editor's local mutation.
 
+On coarse-pointer devices, the selection bar waits 400 ms after selection changes settle, then docks at the bottom of the viewport with safe-area spacing and 44 px touch targets. The browser's native text-selection menu remains above the selected text, while the editor actions stay out of its way.
+
 Providing `onMarkClick` or `onMarkHover` enables margin mode. The editor reports interactions on
 mark spans, does not register the mark popover or arrow-comment composer, and leaves thread UI to
 the host. `markOffsets()` returns the top offset of each distinct mark's first span relative to

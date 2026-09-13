@@ -1,13 +1,13 @@
-import { positionBar } from '../dispatch-action-bar.js';
+import { dispatchActionBarPlugin, positionBar } from '../dispatch-action-bar.js';
 import type { MarkRange } from '../editor/plugins/marks.js';
 import type { EditorView } from '@milkdown/kit/prose/view';
 
 let passed = 0;
 let failed = 0;
 
-function test(name: string, fn: () => void) {
+async function test(name: string, fn: () => void | Promise<void>) {
   try {
-    fn();
+    await fn();
     passed += 1;
     console.log(`  ✓ ${name}`);
   } catch (error) {
@@ -36,6 +36,152 @@ function withMockWindow<T>(windowLike: { innerWidth: number; innerHeight: number
   }
 }
 
+type Listener = (event: Event) => void;
+
+class FakeElement {
+  className = '';
+  type = '';
+  textContent = '';
+  innerHTML = '';
+  parentElement: FakeElement | null = null;
+  readonly children: FakeElement[] = [];
+  readonly dataset: Record<string, string> = {};
+  readonly style = {} as CSSStyleDeclaration;
+  private readonly listeners = new Map<string, Listener>();
+
+  addEventListener(type: string, listener: Listener): void {
+    this.listeners.set(type, listener);
+  }
+
+  removeEventListener(type: string): void {
+    this.listeners.delete(type);
+  }
+
+  dispatch(type: string, event = {} as Event): void {
+    this.listeners.get(type)?.(event);
+  }
+
+  appendChild<T extends FakeElement>(child: T): T {
+    child.parentElement = this;
+    this.children.push(child);
+    return child;
+  }
+
+  contains(node: unknown): boolean {
+    return node === this || this.children.some((child) => child.contains(node));
+  }
+
+  remove(): void {
+    if (!this.parentElement) return;
+    const index = this.parentElement.children.indexOf(this);
+    if (index >= 0) this.parentElement.children.splice(index, 1);
+    this.parentElement = null;
+  }
+
+  getBoundingClientRect() {
+    return { width: 120, height: 40, top: 0, bottom: 40, left: 0, right: 120 };
+  }
+}
+
+class FakeDocument {
+  readonly body = new FakeElement();
+  activeElement: FakeElement | null = null;
+  private readonly listeners = new Map<string, Listener>();
+
+  createElement(): FakeElement {
+    return new FakeElement();
+  }
+
+  addEventListener(type: string, listener: Listener): void {
+    this.listeners.set(type, listener);
+  }
+
+  removeEventListener(type: string): void {
+    this.listeners.delete(type);
+  }
+
+  dispatch(type: string): void {
+    this.listeners.get(type)?.({} as Event);
+  }
+}
+
+function installActionBarDom(coarse: boolean) {
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  const previousDocument = (globalThis as { document?: unknown }).document;
+  const previousSetTimeout = globalThis.setTimeout;
+  const previousClearTimeout = globalThis.clearTimeout;
+  const document = new FakeDocument();
+  const timers = new Map<number, () => void>();
+  let nextTimer = 1;
+
+  const windowLike = {
+    innerWidth: 1_600,
+    innerHeight: 900,
+    matchMedia: () => ({ matches: coarse }),
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+  (globalThis as { window: unknown }).window = windowLike;
+  (globalThis as { document: unknown }).document = document;
+  globalThis.setTimeout = ((callback: TimerHandler) => {
+    if (typeof callback !== 'function') throw new Error('Expected a function timer callback');
+    const timer = nextTimer++;
+    timers.set(timer, callback);
+    return timer;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((timer: number) => {
+    timers.delete(timer);
+  }) as unknown as typeof clearTimeout;
+
+  const dom = new FakeElement();
+  document.body.appendChild(dom);
+  document.activeElement = dom;
+  const selection: Box = { top: 200, bottom: 220, left: 379, right: 600 };
+  const view = {
+    dom,
+    state: {
+      selection: { from: 1, to: 2 },
+      doc: { content: { size: 3 } },
+    },
+    coordsAtPos: () => selection,
+    hasFocus: () => true,
+  } as unknown as EditorView;
+
+  return {
+    document,
+    view,
+    actionBar: () => document.body.children.find((child) => child.className === 'dispatch-action-bar'),
+    setSelection: (from: number, to: number) => {
+      const state = view.state as unknown as { selection: { from: number; to: number } };
+      state.selection = { from, to };
+    },
+    runTimers: () => {
+      const pending = [...timers.values()];
+      timers.clear();
+      for (const timer of pending) timer();
+    },
+    restore: () => {
+      globalThis.setTimeout = previousSetTimeout;
+      globalThis.clearTimeout = previousClearTimeout;
+      if (previousWindow === undefined) delete (globalThis as { window?: unknown }).window;
+      else (globalThis as { window: unknown }).window = previousWindow;
+      if (previousDocument === undefined) delete (globalThis as { document?: unknown }).document;
+      else (globalThis as { document: unknown }).document = previousDocument;
+    },
+  };
+}
+
+async function createActionBarController(view: EditorView) {
+  const actionBarPlugin = dispatchActionBarPlugin({ by: 'Ada' });
+  await actionBarPlugin({
+    wait: async () => undefined,
+    update: () => undefined,
+  } as never)();
+  const controller = actionBarPlugin.plugin().spec.view?.(view);
+  assert(controller !== undefined, 'Expected action bar plugin to create a controller');
+  return controller as { update(view: EditorView): void; destroy(): void };
+}
+
 type Box = { top: number; bottom: number; left: number; right: number };
 
 function makeBar(rect: { width: number; height: number }): HTMLElement {
@@ -57,7 +203,7 @@ function makeView(coords: { from: Box; to: Box }, editor: Box = { top: 0, bottom
 
 console.log('\n=== dispatch-action-bar positionBar ===');
 
-test('centers the bar on the selection, above it, on a wide viewport with room on both sides', () => {
+await test('centers the bar on the selection, above it, on a wide viewport with room on both sides', () => {
   // A selection from x 379-600 sitting comfortably inside a 1600px viewport —
   // the gutter-docking branch used to place the bar at a fixed offset past
   // the editor's right edge regardless of where the selection was; it must
@@ -88,7 +234,7 @@ test('centers the bar on the selection, above it, on a wide viewport with room o
   );
 });
 
-test('never docks in the gutter even when there is ample room past where an editor edge would be', () => {
+await test('never docks in the gutter even when there is ample room past where an editor edge would be', () => {
   // Previously: spaceRight/spaceLeft measured against view.dom's rect, and a
   // wide gap on either side triggered docking at editorRect.right/left +
   // DOCK_GAP. The view here has no dom rect at all — if positionBar tried to
@@ -112,7 +258,7 @@ test('never docks in the gutter even when there is ample room past where an edit
   );
 });
 
-test('falls back to below the selection when there is no room above', () => {
+await test('falls back to below the selection when there is no room above', () => {
   const selection: Box = { top: 5, bottom: 25, left: 700, right: 900 };
   const view = makeView({ from: selection, to: selection });
   const bar = makeBar({ width: 120, height: 40 });
@@ -126,7 +272,7 @@ test('falls back to below the selection when there is no room above', () => {
   assert(barTop >= selection.bottom, `Expected the bar below the selection, got top=${barTop}`);
 });
 
-test('never rises above the editor: a first-line selection puts the bar below it, not over the host chrome', () => {
+await test('never rises above the editor: a first-line selection puts the bar below it, not over the host chrome', () => {
   // Host layout: tabs at y 175-219, editor starting at y 230, selection on the first line.
   const selection: Box = { top: 235, bottom: 254, left: 427, right: 470 };
   const editor: Box = { top: 230, bottom: 900, left: 344, right: 1192 };
@@ -143,5 +289,66 @@ test('never rises above the editor: a first-line selection puts the bar below it
   assert(barTop >= selection.bottom, `Expected the bar below the first-line selection, got top=${barTop}`);
 });
 
+await test('coarse-pointer selections dock after the selection settles', async () => {
+  const fixture = installActionBarDom(true);
+  try {
+    const controller = await createActionBarController(fixture.view);
+    controller.update(fixture.view);
+    const bar = fixture.actionBar();
+    assert(bar !== undefined, 'Expected action bar element to be attached');
+    assert(bar.style.display === 'none', 'Expected touch selection bar to stay hidden before selection settles');
+
+    fixture.document.dispatch('selectionchange');
+    assert(bar.style.display === 'none', 'Expected touch selection bar to remain hidden during its debounce');
+    fixture.runTimers();
+
+    assert(bar.style.display === 'flex', 'Expected touch selection bar to show after its debounce');
+    assert(bar.dataset.touch === 'true', 'Expected coarse-pointer selection bar to expose data-touch=true');
+    assert(!bar.style.top, 'Expected bottom-docked touch selection bar to have no inline top offset');
+
+    fixture.setSelection(1, 1);
+    controller.update(fixture.view);
+    assert(bar.style.display === 'none', 'Expected touch selection bar to hide when the selection collapses');
+    controller.destroy();
+  } finally {
+    fixture.restore();
+  }
+});
+
+await test('fine-pointer selections still appear immediately above their selection', async () => {
+  const fixture = installActionBarDom(false);
+  try {
+    const controller = await createActionBarController(fixture.view);
+    controller.update(fixture.view);
+    const bar = fixture.actionBar();
+    assert(bar !== undefined, 'Expected action bar element to be attached');
+    assert(bar.style.display === 'flex', 'Expected fine-pointer selection bar to show immediately');
+    assert(bar.dataset.touch === undefined, 'Expected fine-pointer selection bar to remain unmarked as touch');
+    assert(
+      Number.parseFloat(bar.style.top) + 40 <= 200,
+      `Expected fine-pointer selection bar above the selection, got top=${bar.style.top}`,
+    );
+    controller.destroy();
+  } finally {
+    fixture.restore();
+  }
+});
+
+await test('hides the selection bar when focus leaves the editor', async () => {
+  const fixture = installActionBarDom(false);
+  try {
+    const controller = await createActionBarController(fixture.view);
+    controller.update(fixture.view);
+    const bar = fixture.actionBar();
+    assert(bar !== undefined, 'Expected action bar element to be attached');
+
+    const editorDom = fixture.view.dom as unknown as FakeElement;
+    editorDom.dispatch('focusout', { relatedTarget: fixture.document.body } as FocusEvent);
+    assert(bar.style.display === 'none', 'Expected selection bar to hide when the editor loses focus');
+    controller.destroy();
+  } finally {
+    fixture.restore();
+  }
+});
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

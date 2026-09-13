@@ -1,6 +1,6 @@
 {
   "name": "@sjawhar/proof-editor",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Open-source collaborative markdown editor with provenance tracking and an agent HTTP bridge",
   "license": "MIT",
   "repository": {
@@ -110,8 +110,9 @@
     "build": "vite build && node scripts/finalize-web-build.mjs",
     "build:lib": "vite build -c vite.lib.config.ts && cp src/lib.css dist/style.css",
     "serve": "tsx server/index.ts",
-    "test": "npm run test:proof-sdk && npm run test:server-routes-share",
+    "test": "npm run test:proof-sdk && npm run test:action-bar && npm run test:server-routes-share",
     "test:proof-sdk": "tsx src/tests/proof-sdk-agent-bridge-client.test.ts",
+    "test:action-bar": "tsx src/tests/dispatch-action-bar-position.test.ts",
     "test:server-routes-share": "tsx src/tests/server-routes-and-share.test.ts",
     "demo:agent": "npm --workspace proof-example run demo:agent",
     "smoke": "node smoke/run.mjs"

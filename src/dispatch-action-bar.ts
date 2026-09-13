@@ -12,10 +12,10 @@
  * click just created this specific mark".
  *
  * This module is a full replacement, registered instead of (not alongside)
- * `markSelectionBarPlugin`, that mirrors its lifecycle logic — but always
- * centers the bar on the selection instead of docking it in the editor's
- * gutter, per product feedback that a docked bar reads as disconnected from
- * the text it acts on — and
+ * `markSelectionBarPlugin`. On fine pointers it centers the bar on the
+ * selection instead of docking it in the editor's gutter; on touch it waits
+ * for a stable selection and docks at the bottom of the viewport so the bar
+ * does not compete with the native selection menu. It
  * implements exactly the three MarkAction kinds the contract defines for the
  * selection bar: Comment, Suggest, and Ask (dropping the upstream bar's Flag
  * button, which has no corresponding MarkAction kind). Each button applies
@@ -38,6 +38,7 @@ import type { MarkAction, SelectionBarActionKind } from './dispatch-marks';
 
 const actionBarKey = new PluginKey('dispatch-action-bar');
 const MARGIN = 12;
+const TOUCH_SELECTION_SETTLE_DELAY = 400;
 
 export interface ActionBarOptions {
   by: string;
@@ -104,14 +105,58 @@ class ActionBarController {
   private readonly bar: HTMLDivElement;
   private lastRange: MarkRange | null = null;
   private readonly options: ActionBarOptions;
+  private lastPointerType: string | null = null;
+  private pointerDown = false;
+  private editorLostFocus = false;
+  private selectionChangedAt: number | null = null;
+  private selectionSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly handleSelectionChange = () => {
     const range = getSelectionRange(this.view);
-    if (range) this.lastRange = range;
+    if (!range) {
+      this.lastRange = null;
+      this.hideBar();
+      return;
+    }
+
+    this.lastRange = range;
+    if (!this.isTouchSelection()) return;
+    this.selectionChangedAt = Date.now();
+    this.hideBar();
+    this.scheduleTouchBar();
+  };
+
+  private readonly handlePointerDown = (event: PointerEvent) => {
+    this.lastPointerType = event.pointerType;
+    this.pointerDown = true;
+    if (this.isTouchSelection()) this.hideBar();
+  };
+
+  private readonly handleTouchStart = () => {
+    this.lastPointerType = 'touch';
+    this.pointerDown = true;
+    this.hideBar();
+  };
+
+  private readonly handlePointerUp = () => {
+    if (!this.pointerDown) return;
+    this.pointerDown = false;
+    if (this.isTouchSelection()) this.scheduleTouchBar();
+  };
+
+  private readonly handleEditorFocusIn = () => {
+    this.editorLostFocus = false;
+  };
+
+  private readonly handleEditorFocusOut = (event: FocusEvent) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget && this.bar.contains(nextTarget as Node)) return;
+    this.editorLostFocus = true;
+    this.hideBar();
   };
 
   private readonly handleScroll = () => {
-    if (this.lastRange) positionBar(this.bar, this.view, this.lastRange);
+    if (this.lastRange && !this.isTouchSelection()) positionBar(this.bar, this.view, this.lastRange);
   };
 
   constructor(view: EditorView, options: ActionBarOptions) {
@@ -130,27 +175,95 @@ class ActionBarController {
     this.buildButtons();
 
     document.addEventListener('selectionchange', this.handleSelectionChange);
+    document.addEventListener('pointerup', this.handlePointerUp);
+    document.addEventListener('touchend', this.handlePointerUp);
+    document.addEventListener('touchcancel', this.handlePointerUp);
+    view.dom.addEventListener('pointerdown', this.handlePointerDown);
+    view.dom.addEventListener('touchstart', this.handleTouchStart);
+    view.dom.addEventListener('focusin', this.handleEditorFocusIn);
+    view.dom.addEventListener('focusout', this.handleEditorFocusOut);
     window.addEventListener('scroll', this.handleScroll, true);
     window.addEventListener('resize', this.handleScroll);
   }
 
   destroy(): void {
     document.removeEventListener('selectionchange', this.handleSelectionChange);
+    document.removeEventListener('pointerup', this.handlePointerUp);
+    document.removeEventListener('touchend', this.handlePointerUp);
+    document.removeEventListener('touchcancel', this.handlePointerUp);
+    this.view.dom.removeEventListener('pointerdown', this.handlePointerDown);
+    this.view.dom.removeEventListener('touchstart', this.handleTouchStart);
+    this.view.dom.removeEventListener('focusin', this.handleEditorFocusIn);
+    this.view.dom.removeEventListener('focusout', this.handleEditorFocusOut);
     window.removeEventListener('scroll', this.handleScroll, true);
     window.removeEventListener('resize', this.handleScroll);
+    this.clearSelectionSettleTimer();
     this.bar.remove();
   }
 
   update(view: EditorView): void {
     this.view = view;
     const range = getSelectionRange(view);
-    if (!range) {
-      this.bar.style.display = 'none';
+    if (!range || this.editorLostFocus) {
+      this.lastRange = range;
+      this.hideBar();
       return;
     }
+
     this.lastRange = range;
+    if (this.isTouchSelection()) {
+      this.bar.dataset.touch = 'true';
+      if (this.selectionChangedAt === null) this.selectionChangedAt = Date.now();
+      this.scheduleTouchBar();
+      return;
+    }
+
+    this.clearSelectionSettleTimer();
+    delete this.bar.dataset.touch;
     this.bar.style.display = 'flex';
     positionBar(this.bar, view, range);
+  }
+
+  private isTouchSelection(): boolean {
+    if (this.lastPointerType === 'touch') return true;
+    try {
+      return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    } catch {
+      return false;
+    }
+  }
+
+  private scheduleTouchBar(): void {
+    this.clearSelectionSettleTimer();
+    if (this.pointerDown || !this.lastRange || this.editorLostFocus) return;
+
+    const elapsed = this.selectionChangedAt === null ? 0 : Date.now() - this.selectionChangedAt;
+    this.selectionSettleTimer = setTimeout(() => {
+      this.selectionSettleTimer = null;
+      if (
+        this.pointerDown ||
+        this.editorLostFocus ||
+        !this.isTouchSelection() ||
+        !isRangeValid(this.view, this.lastRange)
+      ) {
+        return;
+      }
+      this.bar.dataset.touch = 'true';
+      this.bar.style.left = '';
+      this.bar.style.top = '';
+      this.bar.style.display = 'flex';
+    }, Math.max(0, TOUCH_SELECTION_SETTLE_DELAY - elapsed));
+  }
+
+  private clearSelectionSettleTimer(): void {
+    if (this.selectionSettleTimer === null) return;
+    clearTimeout(this.selectionSettleTimer);
+    this.selectionSettleTimer = null;
+  }
+
+  private hideBar(): void {
+    this.clearSelectionSettleTimer();
+    this.bar.style.display = 'none';
   }
 
   private async runAction(kind: SelectionBarActionKind, range: MarkRange): Promise<void> {
