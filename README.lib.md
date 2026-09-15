@@ -105,7 +105,10 @@ The headless entry point does not construct a browser editor or require a Yjs do
 
 Pass the document service's block schema to both `createProofEditor` and
 `createHeadlessProof`. Each schema type becomes a ProseMirror block node and uses
-remark-directive container syntax in Markdown. Attribute values declared
+the `:::name{...}` container form of generic directive syntax in Markdown. That is
+the only directive form the parser knows: leaf (`::name`) and text (`:name`)
+directives are read as ordinary text, so prose such as `16:25Z` or `a:b` parses
+as those literal characters. Attribute values declared
 `server: true` are parsed and serialized unchanged; the editor exposes no
 attribute controls for them, and `setBlockAttributes` rejects them. A host
 renderer receives the typed node and schema definition and should render those

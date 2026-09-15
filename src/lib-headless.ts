@@ -30,7 +30,6 @@ import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import remarkStringify from 'remark-stringify';
 import { unified } from 'unified';
-import remarkDirective from 'remark-directive';
 
 import { codeBlockExtPlugins } from './editor/schema/code-block-ext.js';
 import { frontmatterSchema } from './editor/schema/frontmatter.js';
@@ -38,6 +37,7 @@ import { proofMarkPlugins } from './editor/schema/proof-marks.js';
 import { remarkProofMarks, proofMarkHandler } from './formats/remark-proof-marks.js';
 import { dispatchMarkPlugins, remarkDispatchMarks, dispatchMarkHandler } from './dispatch-marks.js';
 import { remarkSoftBreakAsSpace } from './dispatch-soft-breaks.js';
+import { remarkContainerDirectives } from './lib-remark-directive-plugin.js';
 
 export interface HeadlessProofEditor {
   schema: Schema;
@@ -108,7 +108,7 @@ export async function createHeadlessProof(options: HeadlessProofOptions = {}): P
     .use(remarkParse)
     .use(remarkFrontmatter, ['yaml'])
     .use(remarkGfm)
-    .use(remarkDirective, { collapseEmptyAttributes: false, preferShortcut: true })
+    .use(remarkContainerDirectives)
     .use(remarkProofMarks)
     .use(remarkDispatchMarks)
     .use(remarkSoftBreakAsSpace);
@@ -122,7 +122,7 @@ export async function createHeadlessProof(options: HeadlessProofOptions = {}): P
   const serializeProcessor = unified()
     .use(remarkGfm)
     .use(remarkFrontmatter, ['yaml'])
-    .use(remarkDirective, { collapseEmptyAttributes: false, preferShortcut: true })
+    .use(remarkContainerDirectives)
     .use(remarkStringify, {
       handlers: {
         proofMark: proofMarkHandler,

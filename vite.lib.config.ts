@@ -45,7 +45,8 @@ export default defineConfig({
         id === 'remark-stringify' ||
         id === 'remark-gfm' ||
         id === 'remark-frontmatter' ||
-        id === 'remark-directive',
+        id === 'mdast-util-directive' ||
+        id === 'micromark-extension-directive',
     },
   },
 });

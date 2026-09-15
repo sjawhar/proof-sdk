@@ -187,8 +187,6 @@ function visit(node: MarkdownNode, schema: BlockSchema): void {
 
 export function rejectUnsupportedDirectiveSyntax(tree: MarkdownNode, markdown: string): void {
   const reject = (node: MarkdownNode): void => {
-    if (node.type === 'leafDirective') throw new Error('leaf directives (::name) are not supported');
-    if (node.type === 'textDirective') throw new Error('text directives (:name{...}) are not supported');
     if (node.type === 'paragraph') {
       const start = node.position?.start;
       const end = node.position?.end;

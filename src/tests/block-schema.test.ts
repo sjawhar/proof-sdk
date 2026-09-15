@@ -203,25 +203,23 @@ await test('headless Proof rejects Pandoc fenced div syntax outside code blocks'
     `Pandoc fenced div error = ${(thrown as Error).message}`,
   );
 });
-await test('headless Proof rejects leaf and text directives', async () => {
+await test('headless Proof reads text- and leaf-directive-shaped prose back as literal text', async () => {
   const proof = await createHeadlessProof({ blockSchema });
   const cases = [
-    ['::note{value}\n', 'leaf directives (::name) are not supported'],
-    [':note[value]\n', 'text directives (:name{...}) are not supported'],
+    ['held since 16:25Z\n', 'held since 16:25Z'],
+    ['see :note[value] here\n', 'see :note[value] here'],
+    ['::note{value}\n', '::note{value}'],
+    ['text\n::note\nmore\n', 'text ::note more'],
   ] as const;
-  for (const [markdown, message] of cases) {
-    let thrown: unknown;
-    try {
-      proof.parseMarkdown(markdown);
-    } catch (error) {
-      thrown = error;
-    }
-    assert(thrown instanceof Error, `unsupported directive ${JSON.stringify(markdown)} did not fail`);
-    assert(
-      thrown instanceof Error && thrown.message === message,
-      `unsupported directive error = ${(thrown as Error).message}`,
-    );
+  for (const [markdown, text] of cases) {
+    const doc = proof.parseMarkdown(markdown);
+    assert(doc.childCount === 1, `${JSON.stringify(markdown)} parsed to ${doc.childCount} blocks`);
+    assert(doc.child(0).type.name === 'paragraph', `${JSON.stringify(markdown)} parsed to ${doc.child(0).type.name}`);
+    assert(doc.textContent === text, `${JSON.stringify(markdown)} text = ${JSON.stringify(doc.textContent)}`);
   }
+  const strong = proof.parseMarkdown('held since **16:25Z**\n').child(0).child(1);
+  assert(strong.text === '16:25Z', `strong text = ${JSON.stringify(strong.text)}`);
+  assert(strong.marks.some((mark) => mark.type.name === 'strong'), 'inline marks survive around the colon');
 });
 
 await test('headless Proof rejects a content rule naming an unknown node type', async () => {
