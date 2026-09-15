@@ -185,6 +185,20 @@ function visit(node: MarkdownNode, schema: BlockSchema): void {
   for (const child of node.children ?? []) visit(child, schema);
 }
 
+/** The document service's reason for refusing a paragraph line that opens with `:`
+ *  (pmdoc `unsupportedDirectiveReason`), or undefined when the line is ordinary text. The
+ *  parser itself only knows the `:::name{...}` container, so these lines would otherwise
+ *  parse here as text the server then refuses on settlement. */
+function unsupportedDirectiveReason(line: string): string | undefined {
+  if (line.startsWith(':::')) {
+    if (line === ':::' || /^:::[A-Za-z0-9_-]+\{.*\}$/.test(line)) return undefined;
+    return 'typed block directives use :::name{...}; Pandoc fenced divs and malformed directives are not supported';
+  }
+  if (/^::[A-Za-z0-9_-]/.test(line)) return 'leaf directives (::name) are not supported';
+  if (/^:[A-Za-z0-9_-]/.test(line) && line.includes('{')) return 'text directives (:name{...}) are not supported';
+  return undefined;
+}
+
 export function rejectUnsupportedDirectiveSyntax(tree: MarkdownNode, markdown: string): void {
   const reject = (node: MarkdownNode): void => {
     if (node.type === 'paragraph') {
@@ -192,10 +206,8 @@ export function rejectUnsupportedDirectiveSyntax(tree: MarkdownNode, markdown: s
       const end = node.position?.end;
       if (start?.offset !== undefined && end?.offset !== undefined) {
         for (const [index, line] of markdown.slice(start.offset, end.offset).split('\n').entries()) {
-          const trimmed = line.trimStart();
-          if (trimmed.startsWith(':::') && trimmed !== ':::' && !/^:::[A-Za-z0-9_-]+\{.*\}$/.test(trimmed)) {
-            throw new Error(`line ${(start.line ?? 1) + index}: typed block directives use :::name{...}; Pandoc fenced divs and malformed directives are not supported`);
-          }
+          const reason = unsupportedDirectiveReason(line.trimStart());
+          if (reason !== undefined) throw new Error(`line ${(start.line ?? 1) + index}: ${reason}`);
         }
       }
     }

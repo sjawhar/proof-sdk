@@ -203,13 +203,13 @@ await test('headless Proof rejects Pandoc fenced div syntax outside code blocks'
     `Pandoc fenced div error = ${(thrown as Error).message}`,
   );
 });
-await test('headless Proof reads text- and leaf-directive-shaped prose back as literal text', async () => {
+await test('headless Proof reads directive-shaped prose inside a line back as literal text', async () => {
   const proof = await createHeadlessProof({ blockSchema });
   const cases = [
     ['held since 16:25Z\n', 'held since 16:25Z'],
     ['see :note[value] here\n', 'see :note[value] here'],
-    ['::note{value}\n', '::note{value}'],
-    ['text\n::note\nmore\n', 'text ::note more'],
+    [':note[value] opens the line\n', ':note[value] opens the line'],
+    ['ratio a:b, lines :176-177\n', 'ratio a:b, lines :176-177'],
   ] as const;
   for (const [markdown, text] of cases) {
     const doc = proof.parseMarkdown(markdown);
@@ -220,6 +220,28 @@ await test('headless Proof reads text- and leaf-directive-shaped prose back as l
   const strong = proof.parseMarkdown('held since **16:25Z**\n').child(0).child(1);
   assert(strong.text === '16:25Z', `strong text = ${JSON.stringify(strong.text)}`);
   assert(strong.marks.some((mark) => mark.type.name === 'strong'), 'inline marks survive around the colon');
+});
+await test('headless Proof rejects line-start leaf and text directives the way the document service does', async () => {
+  const proof = await createHeadlessProof({ blockSchema });
+  const cases = [
+    ['::note{value}\n', 'line 1: leaf directives (::name) are not supported'],
+    ['text\n::note\nmore\n', 'line 2: leaf directives (::name) are not supported'],
+    [':callout{#block-1}\n', 'line 1: text directives (:name{...}) are not supported'],
+    ['- ::note\n', 'line 1: leaf directives (::name) are not supported'],
+  ] as const;
+  for (const [markdown, message] of cases) {
+    let thrown: unknown;
+    try {
+      proof.parseMarkdown(markdown);
+    } catch (error) {
+      thrown = error;
+    }
+    assert(thrown instanceof Error, `unsupported directive ${JSON.stringify(markdown)} did not fail`);
+    assert(
+      thrown instanceof Error && thrown.message === message,
+      `unsupported directive ${JSON.stringify(markdown)} error = ${(thrown as Error).message}`,
+    );
+  }
 });
 
 await test('headless Proof rejects a content rule naming an unknown node type', async () => {
