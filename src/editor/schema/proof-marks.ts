@@ -107,12 +107,10 @@ export const proofSuggestionSchema = $markSchema('proofSuggestion', (ctx) => ({
     },
   ],
   toDOM: (mark) => {
-    const attrs = ctx.get(proofSuggestionAttr.key)(mark);
     const domAttrs: Record<string, string> = {
       'data-proof': 'suggestion',
       'data-kind': normalizeSuggestionKind(mark.attrs.kind),
       ...buildCommonDomAttrs(mark),
-      ...attrs,
     };
     if (mark.attrs.content) domAttrs['data-content'] = String(mark.attrs.content);
     if (mark.attrs.status) domAttrs['data-status'] = String(mark.attrs.status);

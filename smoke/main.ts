@@ -407,6 +407,34 @@ async function main(): Promise<void> {
   } else {
     record('setMarkdown renders parsed markdown', false, 'method is absent');
   }
+  // --- 11. replace suggestions render primitive mark attributes ---
+  handleC.setMarkdown('Original suggestion text');
+  const suggestionId = 'smoke-replace-suggestion';
+  const replacementMetadata = (content: string) => ({
+    [suggestionId]: {
+      kind: 'replace' as const,
+      by: 'ai:Smoke',
+      createdAt: '2026-09-18T00:00:00.000Z',
+      quote: 'Original suggestion',
+      content,
+      status: 'pending' as const,
+    },
+  });
+  handleC.applyRemoteMarks(replacementMetadata('First replacement'));
+  await sleep(100);
+  const suggestionSpan = handleC.view.dom.querySelector<HTMLElement>(`[data-proof="suggestion"][data-id="${suggestionId}"]`);
+  const suggestionAttributes = suggestionSpan
+    ? suggestionSpan.getAttributeNames().map((name) => suggestionSpan.getAttribute(name))
+    : [];
+  record(
+    'replace suggestion DOM attributes are primitive',
+    suggestionSpan?.getAttribute('data-id') === suggestionId
+      && suggestionSpan.getAttribute('data-kind') === 'replace'
+      && suggestionSpan.getAttribute('data-by') === 'ai:Smoke'
+      && !suggestionAttributes.some((value) => value === '[object Object]'),
+    suggestionSpan?.outerHTML,
+  );
+
   // --- 11. scoped CSS: the page body is untouched; the actor is the user ---
   record('lib.css leaves body alone', getComputedStyle(document.body).marginTop === '8px');
   await sleep(200);
