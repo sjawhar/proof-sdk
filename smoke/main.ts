@@ -434,6 +434,14 @@ async function main(): Promise<void> {
       && !suggestionAttributes.some((value) => value === '[object Object]'),
     suggestionSpan?.outerHTML,
   );
+  const dispatchReplaceWith = 'Updated replacement';
+  handleC.applyRemoteMarks(replacementMetadata(dispatchReplaceWith), { hydrateAnchors: false });
+  await sleep(100);
+  record(
+    'replace suggestion decoration refreshes replacement content',
+    handleC.view.dom.querySelector<HTMLElement>(`[data-mark-id="${suggestionId}"].mark-replace-insert`)?.textContent === dispatchReplaceWith,
+  );
+
 
   // --- 11. scoped CSS: the page body is untouched; the actor is the user ---
   record('lib.css leaves body alone', getComputedStyle(document.body).marginTop === '8px');
