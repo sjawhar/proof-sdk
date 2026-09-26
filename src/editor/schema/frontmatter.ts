@@ -6,7 +6,6 @@
  */
 
 import { $nodeSchema } from '@milkdown/kit/utils';
-import { withBlockIdSpec } from './block-ids';
 
 type FrontmatterAstNode = {
   type: string;
@@ -61,7 +60,7 @@ export function wrapFrontmatterValue(value: string): string {
   return `${FRONTMATTER_START}\n${normalized}\n${FRONTMATTER_END}`;
 }
 
-export const frontmatterSchema = $nodeSchema('frontmatter', () => withBlockIdSpec({
+export const frontmatterSchema = $nodeSchema('frontmatter', () => ({
   group: 'block',
   content: 'text*',
   marks: '',

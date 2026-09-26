@@ -42,7 +42,6 @@ import { codeBlockExtPlugins } from './schema/code-block-ext';
 import { frontmatterSchema } from './schema/frontmatter';
 import { remarkFrontmatterPlugin } from './schema/remark-frontmatter-plugin';
 import { authoredTrackerPlugin } from './plugins/authored-tracker';
-import { blockIdPlugins } from './schema/block-ids';
 import { heatmapPlugin, heatmapCtx } from './plugins/heatmap-decorations';
 import { marksSyncPlugin } from './plugins/marks-sync';
 import {
@@ -1182,7 +1181,6 @@ class ProofEditorImpl implements ProofEditor {
       .use(remarkFrontmatterPlugin)
       .use(frontmatterSchema)
       .use(codeBlockExtPlugins)
-      .use(blockIdPlugins)
       .use(history)
       .use(listener)
       .use(collab)

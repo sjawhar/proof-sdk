@@ -6,7 +6,6 @@
  */
 
 import { $nodeSchema, $nodeAttr } from '@milkdown/kit/utils';
-import { withBlockIdSpec } from './block-ids';
 import type { Node as ProseMirrorNode, Mark } from '@milkdown/kit/prose/model';
 
 // Types for encoded proof marks
@@ -129,7 +128,7 @@ function stripProofFromMeta(meta: string | undefined): string {
 
 // Extended code block schema
 export const codeBlockSchemaExt = $nodeSchema('code_block', (ctx) => {
-  return withBlockIdSpec({
+  return {
     content: 'text*',
     group: 'block',
     marks: 'proofAuthored proofSuggestion proofComment proofFlagged proofApproved',
@@ -259,7 +258,7 @@ export const codeBlockSchemaExt = $nodeSchema('code_block', (ctx) => {
         });
       },
     },
-  });
+  };
 });
 
 export const codeBlockExtPlugins = [codeBlockAttrExt, codeBlockSchemaExt];

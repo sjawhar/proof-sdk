@@ -6,7 +6,6 @@ dist/
 dist-server/
 build/
 .vite/
-smoke-dist/
 
 # macOS
 .DS_Store
