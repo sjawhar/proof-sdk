@@ -46,6 +46,7 @@ export function installCollabCursorStyles(): void {
     }
 
     .proof-collab-cursor__label {
+      display: inline-block;
       position: absolute;
       left: -1px;
       top: -1.15em;
@@ -126,8 +127,12 @@ export function collabCursorBuilder(user: any): HTMLElement {
   const cursorWidget = document.createElement('span');
   cursorWidget.className = `ProseMirror-yjs-cursor proof-collab-cursor proof-collab-cursor--${colorToken}`;
 
-  const label = document.createElement('div');
+  // The cursor is a widget in the contenteditable. Its label stays inline, and out of the
+  // editable flow, so a browser does not move a post-update text selection into a block
+  // descendant of the decoration and interrupt local typing after a remote edit.
+  const label = document.createElement('span');
   label.className = 'proof-collab-cursor__label';
+  label.contentEditable = 'false';
   if (shouldRenderAgentFace) {
     label.classList.add('proof-collab-cursor__label--icon');
     label.dataset.agentFamily = family;
