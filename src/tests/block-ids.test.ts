@@ -163,6 +163,57 @@ await test('a locally inserted block is stamped outside the undo history', async
   }
 });
 
+await test('a copy of a block, wherever it lands, leaves the id on the block that held it', async () => {
+  setBlockIdGenerator(counter('local'));
+  try {
+    const { schema, parseMarkdown } = await createHeadlessProof({ blockId: counter('b') });
+    const state = EditorState.create({ schema, doc: parseMarkdown('first\n\nsecond\n'), plugins: [createBlockIdsPlugin()] });
+    const holder = state.doc.child(1);
+    assert(blockIdOf(holder) === 'b-2', `holder id = ${blockIdOf(holder)}`);
+    const ids = (doc: typeof state.doc) => {
+      const out: string[] = [];
+      doc.forEach((node) => out.push(`${blockIdOf(node)}:${node.textContent}`));
+      return out.join(' ');
+    };
+    const holderStart = state.doc.child(0).nodeSize;
+    const above = state.apply(state.tr.insert(holderStart, holder.copy(holder.content)));
+    assert(ids(above.doc) === 'b-1:first local-1:second b-2:second', `copy right above: ${ids(above.doc)}`);
+    const top = state.apply(state.tr.insert(0, holder.copy(holder.content)));
+    assert(ids(top.doc) === 'local-2:second b-1:first b-2:second', `copy at the top: ${ids(top.doc)}`);
+    const below = state.apply(state.tr.insert(state.doc.content.size, holder.copy(holder.content)));
+    assert(ids(below.doc) === 'b-1:first b-2:second local-3:second', `copy below: ${ids(below.doc)}`);
+  } finally {
+    setBlockIdGenerator(null);
+  }
+});
+
+await test('a copy of a list keeps every nested id on its holder, and a moved block keeps its id', async () => {
+  setBlockIdGenerator(counter('local'));
+  try {
+    const { schema, parseMarkdown } = await createHeadlessProof({ blockId: counter('b') });
+    const state = EditorState.create({ schema, doc: parseMarkdown('intro\n\n- one\n- two\n'), plugins: [createBlockIdsPlugin()] });
+    const list = state.doc.child(1);
+    const listIds = (node: typeof list) => {
+      const out: (string | null)[] = [blockIdOf(node)];
+      node.descendants((child) => {
+        if (isIdentifiedBlock(child)) out.push(blockIdOf(child));
+      });
+      return out;
+    };
+    const held = listIds(list);
+    const copied = state.apply(state.tr.insert(0, list));
+    assert(listIds(copied.doc.child(2)).join() === held.join(), `original list ids = ${listIds(copied.doc.child(2))}, want ${held}`);
+    const copy = listIds(copied.doc.child(0));
+    assert(copy.every((id) => id !== null && id.startsWith('local-')), `copy ids = ${copy}`);
+
+    const intro = state.doc.child(0);
+    const moved = state.apply(state.tr.delete(0, intro.nodeSize).insert(state.doc.content.size - intro.nodeSize, intro));
+    assert(blockIdOf(moved.doc.child(1)) === blockIdOf(intro), `moved block id = ${blockIdOf(moved.doc.child(1))}`);
+  } finally {
+    setBlockIdGenerator(null);
+  }
+});
+
 await test('a remote (collaboration) transaction is never stamped locally', async () => {
   setBlockIdGenerator(counter('local'));
   try {

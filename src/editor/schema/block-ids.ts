@@ -12,7 +12,9 @@
  * `id` attribute (its anchor slug, regenerated from the heading text).
  *
  * Minting happens in two places. The browser editor stamps blocks created by
- * local transactions in an `appendTransaction` plugin; remote (y-prosemirror)
+ * local transactions in an `appendTransaction` plugin, and when a local edit leaves
+ * one id on two blocks (a paste, a drop or an insert of a copy) the block that held
+ * the id before the edit keeps it and the other gets a new one; remote (y-prosemirror)
  * transactions are left alone, since the peer that created the block stamped it,
  * and a document loaded from the server carries whatever ids the server gave it.
  * The headless engine stamps everything `parseMarkdown` produces (`withBlockIds`).
@@ -21,6 +23,7 @@ import type { Ctx } from '@milkdown/kit/ctx';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import type { Node as ProseMirrorNode, NodeSpec, DOMOutputSpec, ParseRule } from '@milkdown/kit/prose/model';
 import type { Transaction } from '@milkdown/kit/prose/state';
+import { Mapping } from '@milkdown/kit/prose/transform';
 import { $prose } from '@milkdown/kit/utils';
 import {
   blockquoteSchema,
@@ -162,20 +165,55 @@ interface MissingBlock {
   node: ProseMirrorNode;
 }
 
-/** Blocks with no id, or an id already used earlier in the document (a split copies attrs). */
-function blocksNeedingIds(doc: ProseMirrorNode): MissingBlock[] {
-  const seen = new Set<string>();
-  const missing: MissingBlock[] = [];
+/**
+ * Blocks with no id, or with an id another block of the document keeps. Of the blocks
+ * sharing one id, the one `keeper` names keeps it; any other id stays with its first
+ * block in document order, which is where a split leaves it (the first half keeps the
+ * attrs both halves were copied from).
+ */
+function blocksNeedingIds(doc: ProseMirrorNode, keeper: (id: string) => number | undefined): MissingBlock[] {
+  const blocks: { pos: number; node: ProseMirrorNode; id: string | null }[] = [];
+  const count = new Map<string, number>();
   doc.descendants((node, pos) => {
     if (!isIdentifiedBlock(node)) return;
     const id = blockIdOf(node);
-    if (id === null || seen.has(id)) {
-      missing.push({ pos, node });
-      return;
-    }
-    seen.add(id);
+    blocks.push({ pos, node, id });
+    if (id !== null) count.set(id, (count.get(id) ?? 0) + 1);
   });
-  return missing;
+  const kept = new Map<string, number>();
+  for (const { pos, id } of blocks) {
+    if (id === null || count.get(id) === 1 || kept.has(id)) continue;
+    const held = keeper(id);
+    const holderHere = held !== undefined && blocks.some((block) => block.id === id && block.pos === held);
+    kept.set(id, holderHere ? held : pos);
+  }
+  return blocks
+    .filter(({ pos, id }) => id === null || (kept.has(id) && kept.get(id) !== pos))
+    .map(({ pos, node }) => ({ pos, node }));
+}
+
+/**
+ * Where, in the document `transactions` produced, the block that held `id` in `before`
+ * now starts: its old position mapped through every step, leaning past anything
+ * inserted right at its start, so a copy inserted above it does not take its place.
+ */
+function holderAfter(before: ProseMirrorNode, transactions: readonly Transaction[]): (id: string) => number | undefined {
+  const mapping = new Mapping();
+  for (const tr of transactions) mapping.appendMapping(tr.mapping);
+  let held: Map<string, number> | undefined;
+  return (id) => {
+    if (held === undefined) {
+      const holders = new Map<string, number>();
+      before.descendants((node, pos) => {
+        if (!isIdentifiedBlock(node)) return;
+        const blockId = blockIdOf(node);
+        if (blockId !== null && !holders.has(blockId)) holders.set(blockId, pos);
+      });
+      held = holders;
+    }
+    const pos = held.get(id);
+    return pos === undefined ? undefined : mapping.map(pos, 1);
+  };
 }
 
 /** A copy of `doc` with every block identified; the input is returned unchanged when nothing is missing. */
@@ -221,10 +259,10 @@ function isRemote(tr: Transaction): boolean {
 export function createBlockIdsPlugin(): Plugin {
   return new Plugin({
     key: blockIdsPluginKey,
-    appendTransaction(transactions, _oldState, newState) {
+    appendTransaction(transactions, oldState, newState) {
       if (!transactions.some((tr) => tr.docChanged)) return null;
       if (transactions.some((tr) => isRemote(tr) || tr.getMeta('document-load'))) return null;
-      const missing = blocksNeedingIds(newState.doc);
+      const missing = blocksNeedingIds(newState.doc, holderAfter(oldState.doc, transactions));
       if (missing.length === 0) return null;
       let tr = newState.tr;
       for (const { pos, node } of missing) {
