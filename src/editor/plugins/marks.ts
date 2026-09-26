@@ -3176,11 +3176,9 @@ function createDecorations(
 // ============================================================================
 
 // Inject glow animation and refresh transition CSS
-let glowStylesInjected = false;
-function injectGlowStyles(): void {
-  if (glowStylesInjected) return;
-  glowStylesInjected = true;
 
+function injectGlowStyles(): void {
+  if (document.getElementById('proof-mark-glow-styles')) return;
   const style = document.createElement('style');
   style.id = 'proof-mark-glow-styles';
   style.textContent = `
@@ -3189,11 +3187,11 @@ function injectGlowStyles(): void {
        Dark Reader, and prosemirror-view redraws the decoration in response, which reapplies the
        attribute — an endless redraw loop. Each rule stays at single-class specificity so a host
        page's own mark rules still win. */
-    .mark-comment { background-color: rgba(252, 211, 77, 0.3); border-bottom: 2px solid #FCD34D; }
-    .mark-active { background-color: rgba(252, 211, 77, 0.5); border-bottom: 2px solid #FBBF24; }
     .mark-compose-anchor { background-color: rgba(252, 211, 77, 0.22); border-bottom: 2px dashed #F59E0B; }
     .mark-insert { background-color: rgba(34, 197, 94, 0.25); border-bottom: 2px solid #22C55E; }
     .mark-delete { background-color: rgba(239, 68, 68, 0.2); text-decoration: line-through; color: #666; }
+    .mark-comment { background-color: rgba(252, 211, 77, 0.3); border-bottom: 2px solid #FCD34D; }
+    .mark-active { background-color: rgba(252, 211, 77, 0.5); border-bottom: 2px solid #FBBF24; }
 
     /* Glow animation for newly-created suggestion marks */
     @keyframes proof-change-glow {
