@@ -84,23 +84,26 @@ function isAttrsObject(value: unknown): value is Record<string, unknown> {
 
 /** Adds `data-block-id` to a DOMOutputSpec without disturbing the rest of it. */
 function withDomBlockId(spec: DOMOutputSpec, blockId: string | null): DOMOutputSpec {
-  if (blockId === null) return spec;
+  return blockId === null ? spec : withDomAttributes(spec, { [BLOCK_ID_DOM_ATTR]: blockId });
+}
+
+/** Adds attributes to a DOMOutputSpec's outermost element without disturbing the rest of it. */
+export function withDomAttributes(spec: DOMOutputSpec, attributes: Record<string, string>): DOMOutputSpec {
+  if (Object.keys(attributes).length === 0) return spec;
   if (Array.isArray(spec)) {
     const [tag, second, ...rest] = spec as unknown[];
     if (isAttrsObject(second)) {
-      return [tag, { ...second, [BLOCK_ID_DOM_ATTR]: blockId }, ...rest] as unknown as DOMOutputSpec;
+      return [tag, { ...second, ...attributes }, ...rest] as unknown as DOMOutputSpec;
     }
-    return [tag, { [BLOCK_ID_DOM_ATTR]: blockId }, second, ...rest].filter(
-      (part) => part !== undefined,
-    ) as unknown as DOMOutputSpec;
+    return [tag, attributes, second, ...rest].filter((part) => part !== undefined) as unknown as DOMOutputSpec;
   }
-  if (typeof spec === 'object' && spec !== null && 'dom' in spec) {
-    (spec.dom as Element).setAttribute?.(BLOCK_ID_DOM_ATTR, blockId);
-    return spec;
-  }
-  if (typeof spec === 'object' && spec !== null && 'setAttribute' in spec) {
-    (spec as Element).setAttribute(BLOCK_ID_DOM_ATTR, blockId);
-  }
+  const element =
+    typeof spec === 'object' && spec !== null && 'dom' in spec
+      ? (spec.dom as Element)
+      : typeof spec === 'object' && spec !== null && 'setAttribute' in spec
+        ? (spec as Element)
+        : undefined;
+  for (const [name, value] of Object.entries(attributes)) element?.setAttribute?.(name, value);
   return spec;
 }
 
