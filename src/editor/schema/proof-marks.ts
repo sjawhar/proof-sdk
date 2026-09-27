@@ -53,11 +53,7 @@ function serializeProofMark(
 }
 
 // Suggestion mark
-export const proofSuggestionAttr = $markAttr('proofSuggestion', () => ({
-  id: {},
-  kind: {},
-  by: {},
-}));
+export const proofSuggestionAttr = $markAttr('proofSuggestion');
 
 export const proofSuggestionSchema = $markSchema('proofSuggestion', (ctx) => ({
   attrs: {
@@ -107,10 +103,12 @@ export const proofSuggestionSchema = $markSchema('proofSuggestion', (ctx) => ({
     },
   ],
   toDOM: (mark) => {
+    const attrs = ctx.get(proofSuggestionAttr.key)(mark);
     const domAttrs: Record<string, string> = {
       'data-proof': 'suggestion',
       'data-kind': normalizeSuggestionKind(mark.attrs.kind),
       ...buildCommonDomAttrs(mark),
+      ...attrs,
     };
     if (mark.attrs.content) domAttrs['data-content'] = String(mark.attrs.content);
     if (mark.attrs.status) domAttrs['data-status'] = String(mark.attrs.status);
@@ -173,10 +171,7 @@ export const proofSuggestionSchema = $markSchema('proofSuggestion', (ctx) => ({
 }));
 
 // Comment mark
-export const proofCommentAttr = $markAttr('proofComment', () => ({
-  id: {},
-  by: {},
-}));
+export const proofCommentAttr = $markAttr('proofComment');
 
 export const proofCommentSchema = $markSchema('proofComment', (ctx) => ({
   attrs: {
@@ -225,10 +220,7 @@ export const proofCommentSchema = $markSchema('proofComment', (ctx) => ({
 }));
 
 // Flagged mark
-export const proofFlaggedAttr = $markAttr('proofFlagged', () => ({
-  id: {},
-  by: {},
-}));
+export const proofFlaggedAttr = $markAttr('proofFlagged');
 
 export const proofFlaggedSchema = $markSchema('proofFlagged', (ctx) => ({
   attrs: {
@@ -277,10 +269,7 @@ export const proofFlaggedSchema = $markSchema('proofFlagged', (ctx) => ({
 }));
 
 // Approved mark
-export const proofApprovedAttr = $markAttr('proofApproved', () => ({
-  id: {},
-  by: {},
-}));
+export const proofApprovedAttr = $markAttr('proofApproved');
 
 export const proofApprovedSchema = $markSchema('proofApproved', (ctx) => ({
   attrs: {
@@ -329,10 +318,7 @@ export const proofApprovedSchema = $markSchema('proofApproved', (ctx) => ({
 }));
 
 // Authored mark
-export const proofAuthoredAttr = $markAttr('proofAuthored', () => ({
-  by: {},
-  id: {},
-}));
+export const proofAuthoredAttr = $markAttr('proofAuthored');
 
 export const proofAuthoredSchema = $markSchema('proofAuthored', (ctx) => ({
   attrs: {
