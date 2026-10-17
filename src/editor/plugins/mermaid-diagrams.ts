@@ -9,6 +9,9 @@ const MERMAID_LANGUAGE = 'mermaid';
 const MERMAID_CONNECTOR_TOKENS = ['---', '-->', '==>', '-.->', '==', '--', '~~'];
 const MERMAID_LINE_DIRECTIVES = /^(classDef|class|linkStyle|style|click|subgraph|end)\b/i;
 const MERMAID_DANGLING_EDGE_PATTERN = /(?:---|-->|==>|-\.\->|==|--|~~)\s*(?:\|[^|]*\|\s*)?$/;
+// beautiful-mermaid's renderMermaidSVG sends a source whose first line matches this to its own
+// parser; everything else (flowcharts and state diagrams) goes to the parser parseMermaid exposes.
+const MERMAID_NON_FLOWCHART_HEADER = /^(?:xychart(?:-beta)?\b|sequencediagram\s*$|classdiagram\s*$|erdiagram\s*$)/;
 
 function normalizeCodeBlockLanguage(language: unknown): string {
   if (typeof language !== 'string') return '';
@@ -44,6 +47,8 @@ function findDanglingEdgeLine(source: string): string | null {
 }
 
 export function validateMermaidSource(source: string): void {
+  const firstLine = source.trim().split(/[\n;]/)[0]?.trim().toLowerCase() ?? '';
+  if (MERMAID_NON_FLOWCHART_HEADER.test(firstLine)) return;
   const graph = parseMermaid(source);
   const danglingEdgeLine = findDanglingEdgeLine(source);
   if (danglingEdgeLine) {
